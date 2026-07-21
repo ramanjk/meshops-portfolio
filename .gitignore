@@ -1,0 +1,9 @@
+# Render-time error logs from mermaid-filter
+.mermaid-filter.err
+mermaid-filter.err
+
+# Local render tooling — not tracked
+scripts/
+
+# Local Claude Code session state
+.claude/
