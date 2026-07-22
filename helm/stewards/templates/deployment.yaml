@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.serviceAccount.clientId | quote }}
+  labels:
+    azure.workload.identity/use: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inference-steward-prompts
+  namespace: {{ .Values.namespace }}
+data:
+  inference-steward.system.md: |-
+{{ .Files.Get "prompts/inference-steward.system.md" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-inference
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hello-inference
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hello-inference
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: hello-inference
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uv", "run", "--no-sync", "python", "-m", "stewards.inference"]
+          ports:
+            - name: metrics
+              containerPort: 9464
+          env:
+            - name: AZURE_OPENAI_ENDPOINT
+              value: {{ .Values.env.azureOpenAiEndpoint | quote }}
+            - name: AZURE_OPENAI_CHAT_DEPLOYMENT_NAME
+              value: {{ .Values.env.azureOpenAiChatDeploymentName | quote }}
+            - name: LANGFUSE_HOST
+              value: {{ .Values.env.langfuseHost | quote }}
+            - name: AKS_RESOURCE_ID
+              value: {{ .Values.env.aksResourceId | quote }}
+            - name: WORKSPACE_NAMESPACE
+              value: {{ .Values.env.workspaceNamespace | quote }}
+            - name: WORKSPACE_NAME
+              value: {{ .Values.env.workspaceName | quote }}
+            - name: AZURE_MONITOR_WORKSPACE_QUERY_URL
+              value: {{ .Values.env.azureMonitorWorkspaceQueryUrl | quote }}
+            # Secrets from Key Vault CSI:
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hello-inference-secrets
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hello-inference-secrets
+                  key: LANGFUSE_SECRET_KEY
+          volumeMounts:
+            - name: prompts
+              mountPath: /etc/prompts
+              readOnly: true
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: prompts
+          configMap:
+            name: inference-steward-prompts
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: hello-inference-kv

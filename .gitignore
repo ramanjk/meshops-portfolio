@@ -7,3 +7,12 @@ scripts/
 
 # Local Claude Code session state
 .claude/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.env
