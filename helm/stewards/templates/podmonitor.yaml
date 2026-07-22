@@ -1,0 +1,13 @@
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: hello-inference
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hello-inference
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

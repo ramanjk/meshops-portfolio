@@ -1,0 +1,32 @@
+image:
+  repository: ""          # ${ACR_LOGIN_SERVER}/meshops/hello-inference
+  tag: "0.0.1"
+  pullPolicy: IfNotPresent
+
+namespace: meshops
+
+serviceAccount:
+  name: hello-inference
+  # Workload Identity client ID — filled by Terraform output
+  clientId: ""
+
+keyVault:
+  name: ""                # ${KV_NAME}, filled at helm install time
+  tenantId: ""
+
+env:
+  azureOpenAiEndpoint: ""
+  azureOpenAiChatDeploymentName: "gpt-4.1"
+  langfuseHost: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+  aksResourceId: ""
+  workspaceNamespace: "meshops-workloads"
+  workspaceName: "lab-phi-4-mini-eus2-01"
+  azureMonitorWorkspaceQueryUrl: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
