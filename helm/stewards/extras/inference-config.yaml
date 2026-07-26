@@ -1,0 +1,32 @@
+# KAITO inference config override for the phi-4-mini Workspace.
+#
+# WHY: on the T4 (Standard_NC4as_T4_v3, compute capability 7.5) vLLM 0.14 falls
+# back from FlashAttention-2 to the FLASHINFER backend, which JIT-compiles a
+# prefill kernel with `nvcc` at runtime. The KAITO preset image ships no CUDA
+# toolkit, so the engine dies with "Could not find nvcc ... cuda_home
+# '/usr/local/cuda' doesn't exist" and the pod never becomes ready.
+#
+# FIX: pin the attention backend to TRITON_ATTN, which compiles through Triton's
+# own toolchain (ptxas), not nvcc. KAITO passes every key under `vllm:` to the
+# inference server as a `--<key>=<value>` engine arg.
+#
+# Referenced from helm/stewards/extras/workspace.yaml via `inference.config`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phi4-mini-inference-config
+  namespace: meshops-workloads
+data:
+  inference_config.yaml: |
+    # Maximum number of steps to find the max available seq len fitting in GPU memory.
+    max_probe_steps: 6
+
+    # CPU memory utilization for the vllm engine in kv cache offload mode.
+    kv_cache_cpu_memory_utilization: 0.5
+
+    vllm:
+      cpu-offload-gb: 0
+      swap-space: 4
+      # T4 (sm75) has no nvcc in the preset image; force the Triton attention
+      # backend so vLLM does not try to JIT-compile FLASHINFER kernels with nvcc.
+      attention-backend: TRITON_ATTN

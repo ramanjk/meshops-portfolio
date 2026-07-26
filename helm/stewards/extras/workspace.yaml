@@ -12,3 +12,7 @@ resource:
 inference:
   preset:
     name: "phi-4-mini-instruct"
+  # Override vLLM engine args (see extras/inference-config.yaml). Pins the
+  # attention backend to TRITON_ATTN so the T4 does not try to JIT-compile the
+  # FLASHINFER kernel with nvcc (absent from the KAITO preset image).
+  config: "phi4-mini-inference-config"
