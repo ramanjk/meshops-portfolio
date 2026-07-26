@@ -31,6 +31,15 @@ resource "azurerm_kubernetes_cluster" "this" {
   # `az aks update`. This is the target the hello-inference steward observes.
   ai_toolchain_operator_enabled = true
 
+  # Azure Key Vault Provider for Secrets Store CSI Driver. The hello-inference
+  # steward mounts langfuse-public-key/langfuse-secret-key from the private Key
+  # Vault via a SecretProviderClass, so this add-on must be present. Rotation
+  # keeps the projected secret fresh if the KV value changes.
+  key_vault_secrets_provider {
+    secret_rotation_enabled  = true
+    secret_rotation_interval = "2m"
+  }
+
   default_node_pool {
     name           = "system"
     vm_size        = var.system_node_vm_size
