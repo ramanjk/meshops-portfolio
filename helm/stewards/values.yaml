@@ -5,6 +5,20 @@ image:
 
 namespace: meshops
 
+# Run model for the Deployment. 0 = one-shot (pod completes and, under a
+# Deployment, restarts — showing CrashLoopBackOff). A positive value runs the
+# steward as a long-lived loop so the Deployment pod stays Running and re-runs a
+# cycle on this interval. The CronJob (k8s/cronjob.yaml) leaves this at 0.
+# Ignored when chat.enabled is true.
+runIntervalSeconds: 0
+
+# Interactive chat interface. When enabled, the pod serves the steward's persona
+# over HTTP (with a minimal web UI at /) instead of running observe cycles, so
+# you can talk to it and exercise its read-only tools. Keeps the pod Running.
+chat:
+  enabled: true
+  port: 8080
+
 serviceAccount:
   name: hello-inference
   # Workload Identity client ID — filled by Terraform output

@@ -16,6 +16,8 @@ metadata:
 data:
   inference-steward.system.md: |-
 {{ .Files.Get "prompts/inference-steward.system.md" | indent 4 }}
+  inference-steward.chat.md: |-
+{{ .Files.Get "prompts/inference-steward.chat.md" | indent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -49,6 +51,10 @@ spec:
           ports:
             - name: metrics
               containerPort: 9464
+{{- if .Values.chat.enabled }}
+            - name: http
+              containerPort: {{ .Values.chat.port }}
+{{- end }}
           env:
             - name: AZURE_OPENAI_ENDPOINT
               value: {{ .Values.env.azureOpenAiEndpoint | quote }}
@@ -64,6 +70,18 @@ spec:
               value: {{ .Values.env.workspaceName | quote }}
             - name: AZURE_MONITOR_WORKSPACE_QUERY_URL
               value: {{ .Values.env.azureMonitorWorkspaceQueryUrl | quote }}
+            # Loop mode: >0 keeps this Deployment pod Running, re-running a cycle
+            # on this interval. Leave at 0 for the one-shot Job/CronJob pattern.
+            - name: RUN_INTERVAL_SECONDS
+              value: {{ .Values.runIntervalSeconds | default 0 | quote }}
+{{- if .Values.chat.enabled }}
+            # Interactive chat server: serve the steward's persona over HTTP
+            # instead of running observe cycles. Keeps the pod long-lived.
+            - name: CHAT_ENABLED
+              value: "true"
+            - name: CHAT_PORT
+              value: {{ .Values.chat.port | quote }}
+{{- end }}
             # uv needs a writable cache dir; root FS is read-only, so point it
             # at the tmp emptyDir volume mounted below.
             - name: UV_CACHE_DIR
@@ -93,6 +111,20 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+{{- if .Values.chat.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+{{- end }}
           resources: {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: prompts

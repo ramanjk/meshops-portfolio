@@ -1,0 +1,21 @@
+{{- if .Values.chat.enabled }}
+# ClusterIP service fronting the steward's interactive chat API. Reach it with:
+#   kubectl port-forward -n {{ .Values.namespace }} svc/hello-inference-chat {{ .Values.chat.port }}:{{ .Values.chat.port }}
+# then open http://localhost:{{ .Values.chat.port }}/
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-inference-chat
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward-chat
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: hello-inference
+  ports:
+    - name: http
+      port: {{ .Values.chat.port }}
+      targetPort: http
+{{- end }}

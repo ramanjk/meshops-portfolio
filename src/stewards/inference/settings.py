@@ -62,3 +62,21 @@ class Settings(BaseSettings):
 
     # OTel exporter
     otel_prometheus_port: int = Field(9464, description="Port for the in-process Prom exporter.")
+
+    # Run model. 0 (default) = one-shot: run a single cycle and exit (the
+    # Job/CronJob pattern). A positive value turns the process into a long-lived
+    # loop that runs a cycle, sleeps this many seconds, and repeats — which keeps
+    # a Deployment pod in the Running state instead of completing/restarting.
+    run_interval_seconds: int = Field(
+        0,
+        ge=0,
+        description="Seconds between cycles in loop mode. 0 = run once and exit.",
+    )
+
+    # Interactive chat server. When enabled, the process serves a long-lived
+    # HTTP chat API (and minimal web UI) instead of running observe cycles, so
+    # you can talk to the steward's persona and exercise its read-only tools.
+    chat_enabled: bool = Field(
+        False, description="Serve the interactive chat API instead of running cycles."
+    )
+    chat_port: int = Field(8080, description="Port for the chat HTTP server.")

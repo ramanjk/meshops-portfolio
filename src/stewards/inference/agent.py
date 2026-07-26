@@ -42,6 +42,50 @@ def _read_system_prompt() -> str:
     return PROMPT_PATH_LOCAL.read_text(encoding="utf-8")
 
 
+def _read_prompt(filename: str) -> str:
+    """Read a prompt file from /etc/prompts in-cluster or ./prompts locally."""
+    in_cluster = Path("/etc/prompts") / filename
+    if in_cluster.exists():
+        return in_cluster.read_text(encoding="utf-8")
+    local = PROMPT_PATH_LOCAL.parent / filename
+    return local.read_text(encoding="utf-8")
+
+
+def build_mcp_tools(settings: Settings) -> tuple[MCPStdioTool, MCPStdioTool]:
+    """Construct the two read-only MCP stdio tools (aks-mcp, prom-mcp).
+
+    The MCP stdio client launches each server with a *minimal* default
+    environment, which strips the AZURE_* workload-identity vars (needed by
+    prom-mcp's DefaultAzureCredential) and the KUBERNETES_* vars (needed by
+    aks-mcp's in-cluster kubectl). Forward the pod's full environment so both
+    children authenticate the same way this process does.
+    """
+    child_env = dict(os.environ)
+    aks_tool = MCPStdioTool(
+        name="aks-mcp",
+        command=settings.aks_mcp_binary,
+        args=[
+            "--transport",
+            "stdio",
+            "--access-level",
+            settings.aks_mcp_access_level,
+            "--enabled-components",
+            settings.aks_mcp_enabled_components,
+        ],
+        env=child_env,
+    )
+    prom_tool = MCPStdioTool(
+        name="prom-mcp",
+        command="python",
+        args=["-m", "mcp_servers.prom_mcp"],
+        env={
+            **child_env,
+            "AZURE_MONITOR_WORKSPACE_QUERY_URL": settings.azure_monitor_workspace_query_url,
+        },
+    )
+    return aks_tool, prom_tool
+
+
 def _start_prom_exporter(port: int) -> None:
     """Boot a tiny HTTP server on `port` that exposes Prometheus metrics.
 
@@ -77,35 +121,7 @@ async def run_cycle(settings: Settings) -> InferenceObservation:
     Returns the validated ``InferenceObservation``. Raises on any failure.
     """
     # 1. MCP tool servers — both stdio, both read-only.
-    #
-    # The MCP stdio client launches each server with a *minimal* default
-    # environment, which strips the AZURE_* workload-identity vars (needed by
-    # prom-mcp's DefaultAzureCredential) and the KUBERNETES_* vars (needed by
-    # aks-mcp's in-cluster kubectl). Forward the pod's full environment so both
-    # children authenticate the same way this process does.
-    child_env = dict(os.environ)
-    aks_tool = MCPStdioTool(
-        name="aks-mcp",
-        command=settings.aks_mcp_binary,
-        args=[
-            "--transport",
-            "stdio",
-            "--access-level",
-            settings.aks_mcp_access_level,
-            "--enabled-components",
-            settings.aks_mcp_enabled_components,
-        ],
-        env=child_env,
-    )
-    prom_tool = MCPStdioTool(
-        name="prom-mcp",
-        command="python",
-        args=["-m", "mcp_servers.prom_mcp"],
-        env={
-            **child_env,
-            "AZURE_MONITOR_WORKSPACE_QUERY_URL": settings.azure_monitor_workspace_query_url,
-        },
-    )
+    aks_tool, prom_tool = build_mcp_tools(settings)
 
     chat = _build_chat_client(settings)
     system_prompt = _read_system_prompt()
@@ -200,14 +216,43 @@ async def amain() -> None:
     _start_prom_exporter(settings.otel_prometheus_port)
     _enable_langfuse_and_otel(settings)
 
-    observation = await run_cycle(settings)
-    LOG.info("[hello-inference] %s", observation.summary)
-    # Structured log line — one JSON object on a line — for downstream ingestion.
-    print(observation.model_dump_json())
+    interval = settings.run_interval_seconds
+    if interval <= 0:
+        # One-shot: run a single cycle and exit 0 (Job/CronJob pattern).
+        observation = await run_cycle(settings)
+        LOG.info("[hello-inference] %s", observation.summary)
+        # Structured log line — one JSON object on a line — for downstream ingestion.
+        print(observation.model_dump_json())
+        return
+
+    # Loop mode: keep the process alive, running a cycle every `interval`
+    # seconds. A failing cycle is logged and retried on the next tick so a
+    # transient error never takes the pod down.
+    LOG.info("[hello-inference] loop mode enabled; running every %ss", interval)
+    while True:
+        try:
+            observation = await run_cycle(settings)
+            LOG.info("[hello-inference] %s", observation.summary)
+            print(observation.model_dump_json())
+        except Exception:  # noqa: BLE001 — resilience: never crash the loop
+            LOG.exception("[hello-inference] cycle failed; retrying after %ss", interval)
+        await asyncio.sleep(interval)
 
 
 def run() -> None:
-    """Entry point for the `hello-inference` console script."""
+    """Entry point for the `hello-inference` console script.
+
+    Three run modes, selected by env/settings:
+      * chat_enabled       -> serve the interactive chat API (long-lived).
+      * run_interval_seconds > 0 -> loop mode (long-lived, periodic cycles).
+      * otherwise          -> one-shot: run a single cycle and exit.
+    """
+    settings = Settings()  # type: ignore[call-arg]
+    if settings.chat_enabled:
+        from .serve import serve
+
+        serve(settings)
+        return
     asyncio.run(amain())
 
 
