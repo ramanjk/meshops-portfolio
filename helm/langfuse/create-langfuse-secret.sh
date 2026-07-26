@@ -33,6 +33,9 @@ kubectl create secret generic "$SECRET" -n "$NS" \
   --from-literal=nextauth-secret="$(openssl rand -hex 32)" \
   --from-literal=salt="$(openssl rand -hex 32)" \
   --from-literal=encryption-key="$(openssl rand -hex 32)" \
+  --from-literal=init-project-public-key="pk-lf-$(cat /proc/sys/kernel/random/uuid)" \
+  --from-literal=init-project-secret-key="sk-lf-$(cat /proc/sys/kernel/random/uuid)" \
+  --from-literal=init-user-password="$(openssl rand -hex 16)" \
   --from-literal=postgres-password="$(openssl rand -hex 24)" \
   --from-literal=clickhouse-password="$(openssl rand -hex 24)" \
   --from-literal=redis-password="$(openssl rand -hex 24)" \

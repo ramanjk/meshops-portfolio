@@ -54,6 +54,39 @@ langfuse:
       additionalEnv:
         - name: NODE_OPTIONS
           value: "--max-old-space-size=1536"
+        # Headless bootstrap: on first startup Langfuse creates this org,
+        # project, user, and — crucially — an ingestion key pair with the exact
+        # public/secret values below. That lets the deploy be fully scripted
+        # (no manual "create project in the UI" click), and the same pk/sk are
+        # written to Key Vault for the steward. Public/secret keys + the user
+        # password come from the langfuse-secrets Secret, so nothing leaks to git.
+        - name: LANGFUSE_INIT_ORG_ID
+          value: "meshops"
+        - name: LANGFUSE_INIT_ORG_NAME
+          value: "MeshOps"
+        - name: LANGFUSE_INIT_PROJECT_ID
+          value: "hello-inference"
+        - name: LANGFUSE_INIT_PROJECT_NAME
+          value: "Hello Inference"
+        - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: init-project-public-key
+        - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: init-project-secret-key
+        - name: LANGFUSE_INIT_USER_EMAIL
+          value: "ram@meshops.lab"
+        - name: LANGFUSE_INIT_USER_NAME
+          value: "Ram"
+        - name: LANGFUSE_INIT_USER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: langfuse-secrets
+              key: init-user-password
 
 # --- In-cluster datastores (demo-grade single instances) ---------------------
 postgresql:
