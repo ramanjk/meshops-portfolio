@@ -146,7 +146,7 @@ Terraform apply ─► Helm Langfuse ─► kubectl KAITO Workspace ─► image
 
 ## 2. Provisioning Azure with Terraform
 
-Where we are in the story: everything starts with `terraform apply`. The full `.tf` files live in `02_implementation_guide.md`'s companion `infra/terraform/` set. Here is the run.
+Where we are in the story: everything starts with `terraform apply`. The full `.tf` source is embedded in `02_implementation_guide.md` §10 (*The Infrastructure*) and lives in the `infra/terraform/` set. Here is the run.
 
 ```bash
 # 2.1 Log in and pick the subscription

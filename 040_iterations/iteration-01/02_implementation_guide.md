@@ -1251,7 +1251,767 @@ docker push "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1"
 
 ---
 
-## 10. Where to Go Next
+## 10. The Infrastructure (Terraform)
+
+Where we are in the story: the code is built, tested, and containerised — but it needs somewhere to run. This is the complete `infra/terraform/` set that `05_deployment_guide.md` applies. It stands up AKS inside a custom VNet, a **private Key Vault** (public access disabled, reached only through a private endpoint), Workload Identity, Managed Prometheus + Grafana, ACR, and an in-VNet **jumpbox VM** you SSH into to write the Langfuse secrets. Apply it with `terraform apply -var "subscription_id=$(az account show --query id -o tsv)"` — you must be `az login`'d first, because the KAITO add-on is enabled by a `local-exec` call to `az aks update`.
+
+### `infra/terraform/providers.tf`
+
+*Purpose: the required provider versions (azurerm, random, tls, local) and the azurerm feature flags.*
+
+```hcl
+terraform {
+  required_version = ">= 1.8"
+
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
+}
+
+provider "azurerm" {
+  subscription_id = var.subscription_id
+  features {
+    key_vault {
+      # Lab convenience: let `terraform destroy` remove the vault without a
+      # manual purge wait. Soft-delete still applies at the Azure level.
+      purge_soft_delete_on_destroy = true
+    }
+  }
+}
+
+provider "random" {}
+```
+
+### `infra/terraform/variables.tf`
+
+*Purpose: every tunable — resource names, region, subnet CIDRs, jumpbox sizing, and the SSH allow-list — each defaulted for the lab so a bare `apply` works.*
+
+```hcl
+variable "subscription_id" {
+  type        = string
+  description = "Azure subscription ID to deploy the MeshOps sandbox into."
+}
+
+variable "resource_group_name" {
+  type        = string
+  description = "Sandbox resource group name."
+  default     = "rg-meshops-sandbox"
+}
+
+variable "location" {
+  type        = string
+  description = "Azure region. Everything stays in one region to avoid egress cost."
+  default     = "eastus2"
+}
+
+variable "cluster_name" {
+  type        = string
+  description = "AKS cluster name."
+  default     = "aks-meshops-lab"
+}
+
+variable "system_node_vm_size" {
+  type        = string
+  description = "VM size for the single system node pool (the always-on cost floor)."
+  default     = "Standard_D2as_v5"
+}
+
+variable "acr_name" {
+  type        = string
+  description = "Azure Container Registry name (globally unique, alphanumeric only)."
+  default     = "acrmeshops"
+}
+
+variable "identity_name" {
+  type        = string
+  description = "User-assigned managed identity for the hello-inference steward."
+  default     = "msi-hello-inference"
+}
+
+variable "monitor_workspace_name" {
+  type        = string
+  description = "Azure Monitor Workspace (Managed Prometheus) name."
+  default     = "amw-meshops-lab"
+}
+
+variable "grafana_name" {
+  type        = string
+  description = "Azure Managed Grafana name."
+  default     = "amg-meshops-lab"
+}
+
+variable "steward_namespace" {
+  type        = string
+  description = "Kubernetes namespace the hello-inference steward runs in."
+  default     = "meshops"
+}
+
+variable "steward_service_account" {
+  type        = string
+  description = "Kubernetes ServiceAccount name the steward uses (federated to the MSI)."
+  default     = "hello-inference"
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Tags applied to every resource for cost attribution."
+  default = {
+    project     = "meshops"
+    iteration   = "iteration-01"
+    environment = "lab"
+    owner       = "ram"
+  }
+}
+
+# --- Private networking / jumpbox -------------------------------------------
+variable "vnet_address_space" {
+  type        = list(string)
+  description = "Address space for the lab VNet."
+  default     = ["10.20.0.0/16"]
+}
+
+variable "aks_subnet_prefix" {
+  type        = string
+  description = "Subnet for AKS nodes/pods (Azure CNI)."
+  default     = "10.20.0.0/20"
+}
+
+variable "pe_subnet_prefix" {
+  type        = string
+  description = "Subnet dedicated to private endpoints."
+  default     = "10.20.16.0/24"
+}
+
+variable "jumpbox_subnet_prefix" {
+  type        = string
+  description = "Subnet for the jumpbox VM."
+  default     = "10.20.17.0/24"
+}
+
+variable "aks_service_cidr" {
+  type        = string
+  description = "AKS service CIDR (must not overlap the VNet)."
+  default     = "10.30.0.0/16"
+}
+
+variable "aks_dns_service_ip" {
+  type        = string
+  description = "AKS kube-dns service IP (inside aks_service_cidr)."
+  default     = "10.30.0.10"
+}
+
+variable "create_jumpbox" {
+  type        = bool
+  description = "Create the Linux jumpbox VM used to reach the private Key Vault."
+  default     = true
+}
+
+variable "jumpbox_vm_size" {
+  type        = string
+  description = "Jumpbox VM size (kept small; deallocate when idle)."
+  default     = "Standard_B2s"
+}
+
+variable "jumpbox_admin_username" {
+  type        = string
+  description = "Admin username on the jumpbox."
+  default     = "azureuser"
+}
+
+variable "allowed_ssh_source_cidrs" {
+  type        = list(string)
+  description = "Source IP CIDRs allowed to SSH the jumpbox. Defaults to this WSL box's detected egress IPs."
+  default     = ["74.162.222.29/32", "74.162.222.32/32"]
+}
+```
+
+### `infra/terraform/network.tf`
+
+*Purpose: the VNet, its three subnets (AKS, private-link, jumpbox), and the `privatelink.vaultcore.azure.net` private DNS zone linked to the VNet.*
+
+```hcl
+# Lab VNet: AKS, private endpoints, and the jumpbox all live here so the private
+# Key Vault endpoint resolves for both the cluster (CSI driver) and the jumpbox.
+resource "azurerm_virtual_network" "this" {
+  name                = "vnet-meshops-lab"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  address_space       = var.vnet_address_space
+  tags                = var.tags
+}
+
+resource "azurerm_subnet" "aks" {
+  name                 = "snet-aks"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = [var.aks_subnet_prefix]
+}
+
+resource "azurerm_subnet" "pe" {
+  name                 = "snet-privatelink"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = [var.pe_subnet_prefix]
+  # Private endpoints require network policies handling on the subnet.
+  private_endpoint_network_policies = "Disabled"
+}
+
+resource "azurerm_subnet" "jumpbox" {
+  name                 = "snet-jumpbox"
+  resource_group_name  = azurerm_resource_group.this.name
+  virtual_network_name = azurerm_virtual_network.this.name
+  address_prefixes     = [var.jumpbox_subnet_prefix]
+}
+
+# Private DNS zone so `*.vault.azure.net` resolves to the private endpoint IP.
+# Linked to the VNet -> both AKS nodes and the jumpbox resolve it automatically.
+resource "azurerm_private_dns_zone" "kv" {
+  name                = "privatelink.vaultcore.azure.net"
+  resource_group_name = azurerm_resource_group.this.name
+  tags                = var.tags
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "kv" {
+  name                  = "pdnslink-kv-meshops"
+  resource_group_name   = azurerm_resource_group.this.name
+  private_dns_zone_name = azurerm_private_dns_zone.kv.name
+  virtual_network_id    = azurerm_virtual_network.this.id
+  registration_enabled  = false
+  tags                  = var.tags
+}
+```
+
+### `infra/terraform/main.tf`
+
+*Purpose: the resource group, ACR (Basic), the AKS cluster (OIDC + Workload Identity + Managed Prometheus, node pool in `snet-aks`), the KAITO add-on via `local-exec`, and the kubelet `AcrPull` grant.*
+
+```hcl
+resource "azurerm_resource_group" "this" {
+  name     = var.resource_group_name
+  location = var.location
+  tags     = var.tags
+}
+
+# --- Container registry (Basic SKU keeps idle storage cost minimal) ----------
+resource "azurerm_container_registry" "this" {
+  name                = var.acr_name
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  sku                 = "Basic"
+  admin_enabled       = false
+  tags                = var.tags
+}
+
+# --- AKS lab cluster ---------------------------------------------------------
+resource "azurerm_kubernetes_cluster" "this" {
+  name                = var.cluster_name
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  dns_prefix          = var.cluster_name
+  tags                = var.tags
+
+  # Foundations for Workload Identity (steward auth) and KAITO (scale-to-zero GPU).
+  oidc_issuer_enabled       = true
+  workload_identity_enabled = true
+
+  default_node_pool {
+    name           = "system"
+    vm_size        = var.system_node_vm_size
+    node_count     = 1
+    vnet_subnet_id = azurerm_subnet.aks.id
+    # No GPU here — KAITO provisions the T4 spot node only when a Workspace needs it.
+    node_labels = {
+      "meshops.io/pool" = "system"
+    }
+  }
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  # Managed Prometheus: emit metrics to the Azure Monitor Workspace via the DCR
+  # association defined in monitoring.tf.
+  monitor_metrics {}
+
+  network_profile {
+    network_plugin = "azure"
+    network_policy = "azure"
+    service_cidr   = var.aks_service_cidr
+    dns_service_ip = var.aks_dns_service_ip
+  }
+}
+
+# --- KAITO (AI toolchain operator) add-on ------------------------------------
+# The azurerm provider does not yet expose ai_toolchain_operator_enabled on the
+# cluster resource, so enable the managed KAITO add-on out-of-band. Idempotent.
+resource "null_resource" "kaito_addon" {
+  triggers = {
+    cluster_id = azurerm_kubernetes_cluster.this.id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      az aks update \
+        --resource-group ${azurerm_resource_group.this.name} \
+        --name ${azurerm_kubernetes_cluster.this.name} \
+        --enable-ai-toolchain-operator \
+        --only-show-errors
+    EOT
+  }
+}
+
+# --- Let the AKS kubelet pull from ACR ---------------------------------------
+resource "azurerm_role_assignment" "kubelet_acrpull" {
+  scope                            = azurerm_container_registry.this.id
+  role_definition_name             = "AcrPull"
+  principal_id                     = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
+  skip_service_principal_aad_check = true
+}
+```
+
+### `infra/terraform/identity.tf`
+
+*Purpose: the steward's user-assigned identity, the federated credential trusting the `meshops/hello-inference` ServiceAccount, and its read access to AKS.*
+
+```hcl
+# User-assigned identity the steward federates to via Workload Identity.
+resource "azurerm_user_assigned_identity" "hello_inference" {
+  name                = var.identity_name
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = var.tags
+}
+
+# Trust the in-cluster ServiceAccount (meshops/hello-inference) to mint tokens
+# for this identity — no client secret ever leaves Azure.
+resource "azurerm_federated_identity_credential" "hello_inference" {
+  name      = "fic-hello-inference"
+  parent_id = azurerm_user_assigned_identity.hello_inference.id
+  audience  = ["api://AzureADTokenExchange"]
+  issuer    = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject   = "system:serviceaccount:${var.steward_namespace}:${var.steward_service_account}"
+}
+
+# Read-only view of the AKS cluster (aks-mcp reads Workspace CRs and node state).
+resource "azurerm_role_assignment" "steward_aks_reader" {
+  scope                = azurerm_kubernetes_cluster.this.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.hello_inference.principal_id
+}
+
+# Read cluster user credentials is not needed; the steward talks to the API via
+# in-cluster ServiceAccount. Monitoring read on the AMW is granted in monitoring.tf.
+```
+
+### `infra/terraform/keyvault.tf`
+
+*Purpose: the private Key Vault (public network access disabled, default-deny ACLs), its private endpoint + DNS zone group, and the RBAC role assignments.*
+
+```hcl
+data "azurerm_client_config" "current" {}
+
+resource "random_string" "kv_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+  numeric = true
+}
+
+# Key Vault holds the Langfuse keys; the steward reads them via the CSI driver.
+resource "azurerm_key_vault" "this" {
+  name                       = "kv-meshops-${random_string.kv_suffix.result}"
+  resource_group_name        = azurerm_resource_group.this.name
+  location                   = azurerm_resource_group.this.location
+  tenant_id                  = data.azurerm_client_config.current.tenant_id
+  sku_name                   = "standard"
+  rbac_authorization_enabled = true
+  purge_protection_enabled   = false
+  soft_delete_retention_days = 7
+  tags                       = var.tags
+
+  # Private per policy: no public data-plane access. Reachable only via the
+  # private endpoint below (AKS pods + jumpbox resolve it through private DNS).
+  public_network_access_enabled = false
+
+  network_acls {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+  }
+}
+
+# Private endpoint that projects the vault into the VNet.
+resource "azurerm_private_endpoint" "kv" {
+  name                = "pe-kv-meshops"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  subnet_id           = azurerm_subnet.pe.id
+  tags                = var.tags
+
+  private_service_connection {
+    name                           = "psc-kv-meshops"
+    private_connection_resource_id = azurerm_key_vault.this.id
+    is_manual_connection           = false
+    subresource_names              = ["vault"]
+  }
+
+  private_dns_zone_group {
+    name                 = "kv-dns-zone-group"
+    private_dns_zone_ids = [azurerm_private_dns_zone.kv.id]
+  }
+}
+
+# Whoever runs terraform/az needs to write the Langfuse secrets post-provision.
+resource "azurerm_role_assignment" "operator_kv_admin" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+# The steward identity only needs to read secrets.
+resource "azurerm_role_assignment" "steward_kv_secrets_user" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = azurerm_user_assigned_identity.hello_inference.principal_id
+}
+
+resource "azurerm_role_assignment" "steward_kv_reader" {
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Reader"
+  principal_id         = azurerm_user_assigned_identity.hello_inference.principal_id
+}
+```
+
+### `infra/terraform/monitoring.tf`
+
+*Purpose: the Azure Monitor Workspace, the Data Collection Endpoint/Rule/Association that land managed-Prometheus metrics, and Managed Grafana wired to the workspace.*
+
+```hcl
+# --- Azure Monitor Workspace (Managed Prometheus backend) --------------------
+resource "azurerm_monitor_workspace" "this" {
+  name                = var.monitor_workspace_name
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = var.tags
+}
+
+# Data Collection Endpoint + Rule wire the AKS managed-Prometheus scrape into
+# the Azure Monitor Workspace. This is what makes `monitor_metrics {}` land
+# somewhere queryable.
+resource "azurerm_monitor_data_collection_endpoint" "prom" {
+  name                = "dce-meshops-prom"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  kind                = "Linux"
+  tags                = var.tags
+}
+
+resource "azurerm_monitor_data_collection_rule" "prom" {
+  name                        = "dcr-meshops-prom"
+  resource_group_name         = azurerm_resource_group.this.name
+  location                    = azurerm_resource_group.this.location
+  data_collection_endpoint_id = azurerm_monitor_data_collection_endpoint.prom.id
+  kind                        = "Linux"
+  tags                        = var.tags
+
+  destinations {
+    monitor_account {
+      monitor_account_id = azurerm_monitor_workspace.this.id
+      name               = "MonitoringAccount1"
+    }
+  }
+
+  data_flow {
+    streams      = ["Microsoft-PrometheusMetrics"]
+    destinations = ["MonitoringAccount1"]
+  }
+
+  data_sources {
+    prometheus_forwarder {
+      streams = ["Microsoft-PrometheusMetrics"]
+      name    = "PrometheusDataSource"
+    }
+  }
+}
+
+resource "azurerm_monitor_data_collection_rule_association" "prom" {
+  name                    = "dcra-meshops-prom"
+  target_resource_id      = azurerm_kubernetes_cluster.this.id
+  data_collection_rule_id = azurerm_monitor_data_collection_rule.prom.id
+}
+
+# Let the steward identity query the managed-Prometheus endpoint (prom-mcp shim).
+resource "azurerm_role_assignment" "steward_amw_data_reader" {
+  scope                = azurerm_monitor_workspace.this.id
+  role_definition_name = "Monitoring Data Reader"
+  principal_id         = azurerm_user_assigned_identity.hello_inference.principal_id
+}
+
+# --- Azure Managed Grafana ---------------------------------------------------
+resource "azurerm_dashboard_grafana" "this" {
+  name                              = var.grafana_name
+  resource_group_name               = azurerm_resource_group.this.name
+  location                          = azurerm_resource_group.this.location
+  grafana_major_version             = 11
+  api_key_enabled                   = true
+  deterministic_outbound_ip_enabled = false
+  public_network_access_enabled     = true
+  tags                              = var.tags
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  azure_monitor_workspace_integrations {
+    resource_id = azurerm_monitor_workspace.this.id
+  }
+}
+
+# Grafana's managed identity must be able to read metrics from the AMW.
+resource "azurerm_role_assignment" "grafana_amw_data_reader" {
+  scope                = azurerm_monitor_workspace.this.id
+  role_definition_name = "Monitoring Data Reader"
+  principal_id         = azurerm_dashboard_grafana.this.identity[0].principal_id
+}
+
+# Let the operator sign in to Grafana as an Admin.
+resource "azurerm_role_assignment" "operator_grafana_admin" {
+  scope                = azurerm_dashboard_grafana.this.id
+  role_definition_name = "Grafana Admin"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+```
+
+### `infra/terraform/vm.tf`
+
+*Purpose: the jumpbox — generated SSH key, public IP, NSG locked to your egress IP, Ubuntu VM with az-cli via cloud-init, and its Key Vault Secrets Officer role.*
+
+```hcl
+# --- Jumpbox: the only place you can reach the private Key Vault -------------
+# You SSH here from WSL, then run `az keyvault secret set ...`. The vault's
+# private endpoint resolves via the VNet-linked private DNS zone.
+
+# Generated SSH keypair — private key written next to the Terraform state so WSL
+# can use it immediately. Rotate/remove for anything beyond a lab.
+resource "tls_private_key" "jumpbox" {
+  count     = var.create_jumpbox ? 1 : 0
+  algorithm = "ED25519"
+}
+
+resource "local_sensitive_file" "jumpbox_private_key" {
+  count           = var.create_jumpbox ? 1 : 0
+  content         = tls_private_key.jumpbox[0].private_key_openssh
+  filename        = "${path.module}/jumpbox_id_ed25519"
+  file_permission = "0600"
+}
+
+resource "azurerm_public_ip" "jumpbox" {
+  count               = var.create_jumpbox ? 1 : 0
+  name                = "pip-jumpbox-meshops"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  tags                = var.tags
+}
+
+resource "azurerm_network_security_group" "jumpbox" {
+  count               = var.create_jumpbox ? 1 : 0
+  name                = "nsg-jumpbox-meshops"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = var.tags
+
+  security_rule {
+    name                       = "allow-ssh-from-operator"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefixes    = var.allowed_ssh_source_cidrs
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "deny-all-other-inbound"
+    priority                   = 4096
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "jumpbox" {
+  count                     = var.create_jumpbox ? 1 : 0
+  subnet_id                 = azurerm_subnet.jumpbox.id
+  network_security_group_id = azurerm_network_security_group.jumpbox[0].id
+}
+
+resource "azurerm_network_interface" "jumpbox" {
+  count               = var.create_jumpbox ? 1 : 0
+  name                = "nic-jumpbox-meshops"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  tags                = var.tags
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.jumpbox.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.jumpbox[0].id
+  }
+}
+
+resource "azurerm_linux_virtual_machine" "jumpbox" {
+  count               = var.create_jumpbox ? 1 : 0
+  name                = "vm-jumpbox-meshops"
+  resource_group_name = azurerm_resource_group.this.name
+  location            = azurerm_resource_group.this.location
+  size                = var.jumpbox_vm_size
+  admin_username      = var.jumpbox_admin_username
+  tags                = var.tags
+
+  network_interface_ids = [azurerm_network_interface.jumpbox[0].id]
+
+  admin_ssh_key {
+    username   = var.jumpbox_admin_username
+    public_key = tls_private_key.jumpbox[0].public_key_openssh
+  }
+
+  # Managed identity so you can `az login --identity` on the box and write secrets.
+  identity {
+    type = "SystemAssigned"
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "ubuntu-24_04-lts"
+    sku       = "server"
+    version   = "latest"
+  }
+
+  # Install Azure CLI so `az keyvault secret set` works out of the box.
+  custom_data = base64encode(<<-CLOUDINIT
+    #cloud-config
+    package_update: true
+    runcmd:
+      - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+  CLOUDINIT
+  )
+}
+
+# The jumpbox identity may read/write Key Vault secrets.
+resource "azurerm_role_assignment" "jumpbox_kv_secrets_officer" {
+  count                = var.create_jumpbox ? 1 : 0
+  scope                = azurerm_key_vault.this.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = azurerm_linux_virtual_machine.jumpbox[0].identity[0].principal_id
+}
+```
+
+### `infra/terraform/outputs.tf`
+
+*Purpose: every value the Helm install and deploy steps consume, plus the ready-to-run jumpbox SSH command and secret-writing hint.*
+
+```hcl
+output "aks_resource_id" {
+  description = "Full AKS resource ID — Helm env.aksResourceId."
+  value       = azurerm_kubernetes_cluster.this.id
+}
+
+output "aks_oidc_issuer_url" {
+  description = "OIDC issuer URL backing the federated credential."
+  value       = azurerm_kubernetes_cluster.this.oidc_issuer_url
+}
+
+output "aks_kubelet_object_id" {
+  description = "Kubelet identity object ID (already granted AcrPull in Terraform)."
+  value       = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
+}
+
+output "hello_inference_client_id" {
+  description = "Workload-Identity client ID — Helm serviceAccount.clientId."
+  value       = azurerm_user_assigned_identity.hello_inference.client_id
+}
+
+output "key_vault_name" {
+  description = "Key Vault name — Helm keyVault.name."
+  value       = azurerm_key_vault.this.name
+}
+
+output "key_vault_tenant_id" {
+  description = "Key Vault tenant ID — Helm keyVault.tenantId."
+  value       = azurerm_key_vault.this.tenant_id
+}
+
+output "amp_query_url" {
+  description = "Managed Prometheus query endpoint — Helm env.azureMonitorWorkspaceQueryUrl."
+  value       = azurerm_monitor_workspace.this.query_endpoint
+}
+
+output "acr_login_server" {
+  description = "ACR login server for docker build/push."
+  value       = azurerm_container_registry.this.login_server
+}
+
+output "grafana_endpoint" {
+  description = "Managed Grafana URL for importing the dashboard."
+  value       = azurerm_dashboard_grafana.this.endpoint
+}
+
+output "jumpbox_public_ip" {
+  description = "Public IP of the jumpbox (SSH target)."
+  value       = var.create_jumpbox ? azurerm_public_ip.jumpbox[0].ip_address : null
+}
+
+output "jumpbox_ssh_command" {
+  description = "Ready-to-run SSH command from WSL into the jumpbox."
+  value = var.create_jumpbox ? format(
+    "ssh -i %s/jumpbox_id_ed25519 %s@%s",
+    path.module,
+    var.jumpbox_admin_username,
+    azurerm_public_ip.jumpbox[0].ip_address,
+  ) : null
+}
+
+output "write_secrets_hint" {
+  description = "On the jumpbox: authenticate as the VM identity, then set the Langfuse keys."
+  value = var.create_jumpbox ? format(
+    "az login --identity && az keyvault secret set --vault-name %s --name langfuse-public-key --value <pk> && az keyvault secret set --vault-name %s --name langfuse-secret-key --value <sk>",
+    azurerm_key_vault.this.name,
+    azurerm_key_vault.this.name,
+  ) : null
+}
+```
+
+---
+
+## 11. Where to Go Next
 
 Where we are in the story: the code is written, tested locally, and containerised. Two doors lead out of this guide. Do not duplicate their content here — follow them when you're ready.
 
@@ -1260,7 +2020,7 @@ Where we are in the story: the code is written, tested locally, and containerise
 
 ---
 
-## 11. Reference: File → Purpose → Acceptance Criterion
+## 12. Reference: File → Purpose → Acceptance Criterion
 
 | File | Purpose | Primary AC |
 |---|---|---|
@@ -1273,13 +2033,19 @@ Where we are in the story: the code is written, tested locally, and containerise
 | `helm/stewards/templates/deployment.yaml` | Hardened, identity-bound pod | AC-1, AC-5 |
 | `helm/stewards/templates/podmonitor.yaml` | Managed Prometheus scrape | AC-9 |
 | `helm/stewards/templates/secretproviderclass.yaml` | Key Vault secrets, no secrets in code | AC-8 |
+| `infra/terraform/main.tf` | AKS (in VNet) + ACR + KAITO add-on | (deploy) |
+| `infra/terraform/network.tf` | VNet, subnets, private DNS zone | (deploy) |
+| `infra/terraform/keyvault.tf` | Private Key Vault + private endpoint | AC-8 |
+| `infra/terraform/identity.tf` | Workload-Identity federation + RBAC | AC-1 |
+| `infra/terraform/monitoring.tf` | Managed Prometheus + Grafana wiring | AC-9 |
+| `infra/terraform/vm.tf` | In-VNet jumpbox for writing KV secrets | (deploy) |
 | `Dockerfile` | Image with aks-mcp baked in | (build) |
 | `tests/unit/test_schemas.py` | Schema + no-write proof | AC-4, AC-5 |
 | `tests/integration/test_agent_loop.py` | Mocked end-to-end loop | AC-2, AC-3 |
 
 ---
 
-## 12. Limitations
+## 13. Limitations
 
 This guide builds the read-only slice and nothing past it. There is no proposer schema, no HITL gate, and no write-capable MCP tool — those arrive in iteration-02. The Deployment runs the agent once and relies on `restartPolicy: Always` as a poor-man's loop; a proper CronJob lands in deployment (doc 05). There is no local dev container, no pre-commit prompt-injection scan (that is a Security-Steward deliverable later), and no CI runner config yet (CI lands when the Quality Steward needs Promptfoo to gate a prompt PR).
 
