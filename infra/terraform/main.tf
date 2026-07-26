@@ -26,6 +26,11 @@ resource "azurerm_kubernetes_cluster" "this" {
   oidc_issuer_enabled       = true
   workload_identity_enabled = true
 
+  # KAITO (AI toolchain operator) managed add-on. The azurerm provider (>= 4.x)
+  # exposes this natively, so manage it here rather than via an out-of-band
+  # `az aks update`. This is the target the hello-inference steward observes.
+  ai_toolchain_operator_enabled = true
+
   default_node_pool {
     name           = "system"
     vm_size        = var.system_node_vm_size
@@ -73,41 +78,6 @@ resource "azurerm_kubernetes_cluster" "this" {
       microsoft_defender,
       default_node_pool[0].node_count,
     ]
-  }
-}
-
-# --- KAITO (AI toolchain operator) add-on ------------------------------------
-# The azurerm provider does not yet expose ai_toolchain_operator_enabled on the
-# cluster resource, so enable the managed KAITO add-on out-of-band. Idempotent.
-resource "null_resource" "kaito_addon" {
-  # Re-evaluate on every apply: the azurerm provider doesn't manage
-  # aiToolchainOperatorProfile, and its cluster PUT on any in-place update wipes
-  # the add-on back to disabled. A cluster_id-only trigger would never re-run
-  # after such an update, silently leaving KAITO off. We instead check on every
-  # apply and only pay the slow `az aks update` when the add-on is actually off.
-  triggers = {
-    always = timestamp()
-  }
-
-  provisioner "local-exec" {
-    interpreter = ["/bin/bash", "-c"]
-    command     = <<-EOT
-      set -euo pipefail
-      enabled=$(az aks show \
-        --resource-group ${azurerm_resource_group.this.name} \
-        --name ${azurerm_kubernetes_cluster.this.name} \
-        --query "aiToolchainOperatorProfile.enabled" -o tsv 2>/dev/null || echo "false")
-      if [ "$enabled" != "true" ]; then
-        echo "Enabling AI toolchain operator (KAITO) add-on..."
-        az aks update \
-          --resource-group ${azurerm_resource_group.this.name} \
-          --name ${azurerm_kubernetes_cluster.this.name} \
-          --enable-ai-toolchain-operator \
-          --only-show-errors
-      else
-        echo "AI toolchain operator (KAITO) add-on already enabled."
-      fi
-    EOT
   }
 }
 

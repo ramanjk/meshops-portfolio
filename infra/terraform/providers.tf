@@ -29,6 +29,12 @@ provider "azurerm" {
       # manual purge wait. Soft-delete still applies at the Azure level.
       purge_soft_delete_on_destroy = true
     }
+    resource_group {
+      # AKS auto-creates subnet NSGs (…-nsg-<region>) that Terraform doesn't
+      # manage. Without this, `terraform destroy` fails deleting the RG because
+      # it "still contains resources". Let the RG delete clear those leftovers.
+      prevent_deletion_if_contains_resources = false
+    }
   }
 }
 

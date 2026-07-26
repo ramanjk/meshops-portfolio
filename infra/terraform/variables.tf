@@ -11,8 +11,8 @@ variable "resource_group_name" {
 
 variable "location" {
   type        = string
-  description = "Azure region. Everything stays in one region to avoid egress cost."
-  default     = "eastus2"
+  description = "Azure region. Everything stays in one region to avoid egress cost. eastus2 had 0 T4 GPU quota; eastus had T4 quota but AKS control-plane capacity was exhausted (AKSCapacityHeavyUsage), so we use southcentralus which has T4=100 and available AKS capacity."
+  default     = "southcentralus"
 }
 
 variable "cluster_name" {
@@ -23,8 +23,8 @@ variable "cluster_name" {
 
 variable "system_node_vm_size" {
   type        = string
-  description = "VM size for the single system node pool (the always-on cost floor)."
-  default     = "Standard_D2as_v5"
+  description = "VM size for the system node pool (the always-on cost floor). Standard_D2as_v5 is not allowed in southcentralus for this subscription; Standard_D2as_v6 is (and is same 2 vCPU/8GB AMD class)."
+  default     = "Standard_D2as_v6"
 }
 
 variable "system_node_min_count" {
@@ -137,8 +137,8 @@ variable "create_jumpbox" {
 
 variable "jumpbox_vm_size" {
   type        = string
-  description = "Jumpbox VM size (kept small; deallocate when idle)."
-  default     = "Standard_B2s"
+  description = "Jumpbox VM size (kept small; deallocate when idle). B-series (B2s/B2ms) hit capacity restrictions in southcentralus, so we use Standard_D2as_v6 (x86/AMD, 2 vCPU/8GB) which provisions there."
+  default     = "Standard_D2as_v6"
 }
 
 variable "jumpbox_admin_username" {
@@ -156,8 +156,8 @@ variable "allowed_ssh_source_cidrs" {
 # --- Azure OpenAI ------------------------------------------------------------
 variable "openai_location" {
   type        = string
-  description = "Region for the Azure OpenAI account (gpt-4.1 availability varies by region)."
-  default     = "eastus2"
+  description = "Region for the Azure OpenAI account (gpt-4.1 availability varies by region). gpt-4.1 GlobalStandard confirmed available in southcentralus."
+  default     = "southcentralus"
 }
 
 variable "openai_chat_deployment_name" {
