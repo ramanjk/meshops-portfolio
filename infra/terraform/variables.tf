@@ -51,6 +51,12 @@ variable "grafana_name" {
   default     = "amg-meshops-lab"
 }
 
+variable "grafana_major_version" {
+  type        = string
+  description = "Managed Grafana major version. Standard SKU currently supports 12 or 13."
+  default     = "12"
+}
+
 variable "steward_namespace" {
   type        = string
   description = "Kubernetes namespace the hello-inference steward runs in."

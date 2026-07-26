@@ -24,6 +24,13 @@ resource "azurerm_public_ip" "jumpbox" {
   allocation_method   = "Static"
   sku                 = "Standard"
   tags                = var.tags
+
+  lifecycle {
+    # Some subscriptions/policies auto-inject ip_tags (e.g.
+    # FirstPartyUsage=/Unprivileged) and normalize zones. Ignore both so
+    # Terraform doesn't force-replace an otherwise healthy public IP.
+    ignore_changes = [ip_tags, zones]
+  }
 }
 
 resource "azurerm_network_security_group" "jumpbox" {

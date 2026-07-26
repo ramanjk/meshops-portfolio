@@ -1299,7 +1299,7 @@ provider "random" {}
 
 ### `infra/terraform/variables.tf`
 
-*Purpose: every tunable — resource names, region, subnet CIDRs, jumpbox sizing, and the SSH allow-list — each defaulted for the lab so a bare `apply` works.*
+*Purpose: every tunable — resource names, region, subnet CIDRs, Grafana version, jumpbox sizing, and the SSH allow-list — each defaulted for the lab so a bare `apply` works.*
 
 ```hcl
 variable "subscription_id" {
@@ -1353,6 +1353,12 @@ variable "grafana_name" {
   type        = string
   description = "Azure Managed Grafana name."
   default     = "amg-meshops-lab"
+}
+
+variable "grafana_major_version" {
+  type        = string
+  description = "Managed Grafana major version. Standard SKU currently supports 12 or 13."
+  default     = "12"
 }
 
 variable "steward_namespace" {
@@ -1600,11 +1606,11 @@ resource "azurerm_user_assigned_identity" "hello_inference" {
 # Trust the in-cluster ServiceAccount (meshops/hello-inference) to mint tokens
 # for this identity — no client secret ever leaves Azure.
 resource "azurerm_federated_identity_credential" "hello_inference" {
-  name      = "fic-hello-inference"
-  parent_id = azurerm_user_assigned_identity.hello_inference.id
-  audience  = ["api://AzureADTokenExchange"]
-  issuer    = azurerm_kubernetes_cluster.this.oidc_issuer_url
-  subject   = "system:serviceaccount:${var.steward_namespace}:${var.steward_service_account}"
+  name                      = "fic-hello-inference"
+  user_assigned_identity_id = azurerm_user_assigned_identity.hello_inference.id
+  audience                  = ["api://AzureADTokenExchange"]
+  issuer                    = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject                   = "system:serviceaccount:${var.steward_namespace}:${var.steward_service_account}"
 }
 
 # Read-only view of the AKS cluster (aks-mcp reads Workspace CRs and node state).
@@ -1766,7 +1772,7 @@ resource "azurerm_dashboard_grafana" "this" {
   name                              = var.grafana_name
   resource_group_name               = azurerm_resource_group.this.name
   location                          = azurerm_resource_group.this.location
-  grafana_major_version             = 11
+  grafana_major_version             = var.grafana_major_version
   api_key_enabled                   = true
   deterministic_outbound_ip_enabled = false
   public_network_access_enabled     = true
@@ -1798,7 +1804,7 @@ resource "azurerm_role_assignment" "operator_grafana_admin" {
 
 ### `infra/terraform/vm.tf`
 
-*Purpose: the jumpbox — generated SSH key, public IP, NSG locked to your egress IP, Ubuntu VM with az-cli via cloud-init, and its Key Vault Secrets Officer role.*
+*Purpose: the jumpbox — generated SSH key, public IP (ignoring Azure-injected ip_tags), NSG locked to your egress IP, Ubuntu VM with az-cli via cloud-init, and its Key Vault Secrets Officer role.*
 
 ```hcl
 # --- Jumpbox: the only place you can reach the private Key Vault -------------
@@ -1827,6 +1833,13 @@ resource "azurerm_public_ip" "jumpbox" {
   allocation_method   = "Static"
   sku                 = "Standard"
   tags                = var.tags
+
+  lifecycle {
+    # Some subscriptions/policies auto-inject ip_tags (e.g.
+    # FirstPartyUsage=/Unprivileged) and normalize zones. Ignore both so
+    # Terraform doesn't force-replace an otherwise healthy public IP.
+    ignore_changes = [ip_tags, zones]
+  }
 }
 
 resource "azurerm_network_security_group" "jumpbox" {

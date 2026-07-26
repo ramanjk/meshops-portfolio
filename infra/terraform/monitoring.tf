@@ -63,7 +63,7 @@ resource "azurerm_dashboard_grafana" "this" {
   name                              = var.grafana_name
   resource_group_name               = azurerm_resource_group.this.name
   location                          = azurerm_resource_group.this.location
-  grafana_major_version             = 11
+  grafana_major_version             = var.grafana_major_version
   api_key_enabled                   = true
   deterministic_outbound_ip_enabled = false
   public_network_access_enabled     = true
