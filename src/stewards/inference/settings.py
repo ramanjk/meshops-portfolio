@@ -45,6 +45,14 @@ class Settings(BaseSettings):
         "readonly",
         description="Must remain 'readonly' for iteration-01 (no-write, first layer).",
     )
+    aks_mcp_enabled_components: str = Field(
+        "kubectl",
+        description=(
+            "Comma-separated aks-mcp components to enable. The steward only needs "
+            "'kubectl' to read the Workspace CR; enabling all components would also "
+            "require the az/helm/cilium/hubble binaries to be present in the image."
+        ),
+    )
 
     # Managed Prometheus query endpoint (Azure Monitor Workspace)
     azure_monitor_workspace_query_url: str = Field(

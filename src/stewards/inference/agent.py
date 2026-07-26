@@ -77,16 +77,32 @@ async def run_cycle(settings: Settings) -> InferenceObservation:
     Returns the validated ``InferenceObservation``. Raises on any failure.
     """
     # 1. MCP tool servers — both stdio, both read-only.
+    #
+    # The MCP stdio client launches each server with a *minimal* default
+    # environment, which strips the AZURE_* workload-identity vars (needed by
+    # prom-mcp's DefaultAzureCredential) and the KUBERNETES_* vars (needed by
+    # aks-mcp's in-cluster kubectl). Forward the pod's full environment so both
+    # children authenticate the same way this process does.
+    child_env = dict(os.environ)
     aks_tool = MCPStdioTool(
         name="aks-mcp",
         command=settings.aks_mcp_binary,
-        args=["--transport", "stdio", "--access-level", settings.aks_mcp_access_level],
+        args=[
+            "--transport",
+            "stdio",
+            "--access-level",
+            settings.aks_mcp_access_level,
+            "--enabled-components",
+            settings.aks_mcp_enabled_components,
+        ],
+        env=child_env,
     )
     prom_tool = MCPStdioTool(
         name="prom-mcp",
         command="python",
         args=["-m", "mcp_servers.prom_mcp"],
         env={
+            **child_env,
             "AZURE_MONITOR_WORKSPACE_QUERY_URL": settings.azure_monitor_workspace_query_url,
         },
     )

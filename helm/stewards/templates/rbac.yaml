@@ -1,0 +1,37 @@
+{{/*
+The steward's aks-mcp child process runs `kubectl get` against the cluster using
+this pod's in-cluster service-account token. Grant it read-only access to the
+KAITO Workspace CR (and nodes, for GPU node inspection). Cluster-scoped because
+the Workspace lives in another namespace (meshops-workloads) and nodes are
+cluster-scoped.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.serviceAccount.name }}-workspace-reader
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+rules:
+  - apiGroups: ["kaito.sh"]
+    resources: ["workspaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}-workspace-reader
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.serviceAccount.name }}-workspace-reader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace }}

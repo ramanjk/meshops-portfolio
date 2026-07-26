@@ -18,6 +18,13 @@ RUN curl -sL "https://github.com/Azure/aks-mcp/releases/download/${AKS_MCP_VERSI
         -o /usr/local/bin/aks-mcp && \
     chmod +x /usr/local/bin/aks-mcp
 
+# aks-mcp's "kubectl" component shells out to the kubectl binary (using the pod's
+# in-cluster service-account credentials) to read the KAITO Workspace CR.
+ARG KUBECTL_VERSION=v1.31.4
+RUN curl -sL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+        -o /usr/local/bin/kubectl && \
+    chmod +x /usr/local/bin/kubectl
+
 # Dependencies first, for cache friendliness. README.md is required because
 # pyproject.toml declares `readme = "README.md"`. Install deps only (not the
 # project itself) here so this layer caches until deps change.
