@@ -2,7 +2,7 @@
 
 *Audience: Ram provisioning Azure and installing the chart; topology and cost line. Read this as the moment you take the tested code and put it on a real cluster — and prove it costs almost nothing while it sleeps.*
 
-The tests are green. The image is built. Now comes the part that makes it real: you open the Azure portal, run `terraform apply`, watch a lab AKS cluster spin into existence, deploy Langfuse, push the image, `helm install`, and tail the logs until that first JSON observation scrolls by. But there's a second, quieter goal threaded through every command here — **when nobody is watching, this should cost almost nothing.** The GPU node scales to zero, the agent runs on a schedule instead of a hot loop, and the steward's reasoning runs on Ram's Microsoft-tenant Azure OpenAI quota at $0. By the end you'll have a running slice *and* a cost-verification step that proves idle ≈ $0.
+The tests are green. The image is built. Now comes the part that makes it real: you open the Azure portal, run `terraform apply`, watch a lab AKS cluster spin into existence, deploy Langfuse, push the image, `helm install`, and tail the logs until that first JSON observation scrolls by. But there's a second, quieter goal threaded through every command here — **when nobody is watching, this should cost almost nothing.** The GPU node scales to zero, the agent runs on a schedule instead of a hot loop, and the steward's `gpt-4.1` reasoning is usage-metered — so with the CronJob paused the LLM line is $0, and at the `*/15` demo cadence it's only a few dollars a month. By the end you'll have a running slice *and* a cost-verification step that proves idle ≈ $0.
 
 ## Map of This Guide
 
@@ -164,6 +164,8 @@ The Terraform you apply does the cost-critical thing for you: the AKS cluster en
 
 Terraform also stands up the **private-networking layer**: a `vnet-meshops-lab` VNet with `snet-aks` / `snet-privatelink` / `snet-jumpbox` subnets, a **Key Vault with public network access disabled** reached through a private endpoint, the `privatelink.vaultcore.azure.net` private DNS zone linked to the VNet, and a small **jumpbox VM** (the only place from which you can write the Langfuse secrets — see §3.1). It also assigns the AKS kubelet `AcrPull` on the registry, so no manual role assignment is needed later.
 
+It also creates the **Azure OpenAI** account and a `gpt-4.1` chat deployment (`infra/terraform/openai.tf`), and grants the steward's managed identity the *Cognitive Services OpenAI User* data-plane role — so the agent authenticates with Workload Identity (no API key). There is no pre-existing free Microsoft-tenant quota; this account bills to the sandbox subscription (usage-metered, a few $/mo at the demo cadence). You feed its endpoint into Helm via the `azure_openai_endpoint` output below.
+
 The outputs you'll feed into Helm:
 
 | Terraform output | Used for |
@@ -172,6 +174,8 @@ The outputs you'll feed into Helm:
 | `hello_inference_client_id` | Helm `serviceAccount.clientId` |
 | `key_vault_name` | Helm `keyVault.name` |
 | `key_vault_tenant_id` | Helm `keyVault.tenantId` |
+| `azure_openai_endpoint` | Helm `env.azureOpenAiEndpoint` |
+| `azure_openai_chat_deployment_name` | Helm `env.azureOpenAiChatDeploymentName` |
 | `amp_query_url` | Helm `env.azureMonitorWorkspaceQueryUrl` |
 | `aks_kubelet_object_id` | Reference only — `AcrPull` already assigned by Terraform |
 | `acr_login_server` | `docker build`/`push` target |
@@ -259,7 +263,8 @@ helm install hello-inference helm/stewards -n meshops \
     --set serviceAccount.clientId="$(terraform -chdir=infra/terraform output -raw hello_inference_client_id)" \
     --set keyVault.name="$(terraform -chdir=infra/terraform output -raw key_vault_name)" \
     --set keyVault.tenantId="$(terraform -chdir=infra/terraform output -raw key_vault_tenant_id)" \
-    --set env.azureOpenAiEndpoint="https://<aoai-name>.openai.azure.com/" \
+    --set env.azureOpenAiEndpoint="$(terraform -chdir=infra/terraform output -raw azure_openai_endpoint)" \
+    --set env.azureOpenAiChatDeploymentName="$(terraform -chdir=infra/terraform output -raw azure_openai_chat_deployment_name)" \
     --set env.aksResourceId="$(terraform -chdir=infra/terraform output -raw aks_resource_id)" \
     --set env.azureMonitorWorkspaceQueryUrl="$(terraform -chdir=infra/terraform output -raw amp_query_url)"
 
@@ -318,7 +323,7 @@ Here is how each cost source is driven toward zero, in plain terms:
 
 1. **The GPU node — the expensive one — scales to zero.** KAITO returns the spot `Standard_NC4as_T4_v3` when the Workspace is idle. No GPU node sitting hot is the difference between dollars-per-hour and zero. (Equivalent to the serverless `min-instances=0` rule on a container platform: never pin a GPU replica above zero "for convenience.")
 2. **The agent runs on a CronJob, not an always-on Deployment.** A pod that lives ~20 seconds every 15 minutes draws negligible CPU/memory on the small system node you already pay a flat rate for. No hot reasoning loop.
-3. **Steward reasoning on Azure OpenAI `gpt-4.1` is $0 to Ram** — it runs on the Microsoft-tenant quota. Without that, the AOAI line would dominate; with it, the LLM cost line is zero.
+3. **Steward reasoning on Azure OpenAI `gpt-4.1` is metered, not free.** The account is created by `infra/terraform/openai.tf` and bills to *this* sandbox subscription (there was no pre-existing Microsoft-tenant $0 quota available). At demo volume — a ~20 s call every 15 min — the token spend is a few dollars a month, but it is **not zero**; the `*/15` schedule and the scale-to-zero Deployment are what keep it small.
 4. **Langfuse, Managed Prometheus, and Managed Grafana** self-host on the cluster / sit on included tiers at this volume — no per-seat SaaS bill, no external collector instance.
 
 Now the **silent leaks** — the things that cost money even when "nothing is running" — and how to plug each:
@@ -349,8 +354,8 @@ kubectl get nodes -l accelerator=nvidia   # expect: no resources (GPU returned)
 kubectl get deploy/hello-inference -n meshops -o jsonpath='{.spec.replicas}'   # expect: 0
 kubectl get cronjob hello-inference -n meshops                                  # the only thing scheduled
 
-# 6.3 Confirm the steward reasoning line is $0 (Microsoft quota).
-# Azure OpenAI usage shows tokens consumed but $0 billed under the MS tenant.
+# 6.3 Confirm the steward reasoning line stays small (metered on this sub).
+# Azure OpenAI usage shows tokens consumed; at */15 volume this is a few $/mo, not $0.
 
 # 6.4 Read yesterday's actual cost for the sandbox RG.
 az consumption usage list \
@@ -370,7 +375,7 @@ az consumption budget create \
     --time-period startDate=2026-06-01 endDate=2026-12-01
 ```
 
-The idle expectation: with the GPU returned, the Deployment at zero, the CronJob paused, and reasoning on Microsoft quota, the only standing charges are the one system node, the jumpbox (if left running), a static public IP, the private endpoint, and a few provisioned managed disks — `az aks stop` plus `az vm deallocate -g rg-meshops-sandbox -n vm-jumpbox-meshops` remove the compute charges between demos. A 15-minute CronJob over a month is ~2880 cycles at ~$0.038 list each (~$110/mo at list, **$0 to Ram** under the MS tenant), all bounded by the `$200` budget alert. **Idle ≈ $0** once the jumpbox is deallocated.
+The idle expectation: with the GPU returned, the Deployment at zero, and the CronJob paused, the only standing charges are the one system node, the jumpbox (if left running), a static public IP, the private endpoint, and a few provisioned managed disks — `az aks stop` plus `az vm deallocate -g rg-meshops-sandbox -n vm-jumpbox-meshops` remove the compute charges between demos. The steward's Azure OpenAI reasoning is *usage*-metered, so it costs nothing while the CronJob is paused and only a few dollars a month when it runs on the `*/15` schedule (~2880 short calls/mo). All of it is bounded by the `$200` budget alert. **Idle ≈ $0** once the jumpbox is deallocated and the CronJob is paused.
 
 **Checkpoint:** You've proven the cost line. Next, how to roll back or tear down cleanly.
 
@@ -406,11 +411,12 @@ terraform -chdir=infra/terraform destroy -var "subscription_id=$(az account show
 | VNet + subnets + private DNS | `infra/terraform/network.tf` | $0 |
 | Workload Identity + federation | `infra/terraform/identity.tf` | $0 |
 | Private Key Vault + endpoint + RBAC | `infra/terraform/keyvault.tf` | Private endpoint (small hourly); vault ops negligible |
+| Azure OpenAI + gpt-4.1 deployment | `infra/terraform/openai.tf` | Usage-metered; ~few $/mo at `*/15`, $0 while paused |
 | Jumpbox VM + public IP + NSG | `infra/terraform/vm.tf` | VM compute + static IP — `az vm deallocate` to zero |
 | Managed Prometheus + Grafana | `infra/terraform/monitoring.tf` | Included/free tier at this volume |
 | KAITO Workspace CR | `helm/stewards/extras/workspace.yaml` | $0 GPU when idle |
 | Langfuse | `helm/langfuse/values.yaml` | PVC disk only (demo-grade) |
-| hello-inference CronJob | `k8s/cronjob.yaml` | ~20 s every 15 min; AOAI $0 to Ram |
+| hello-inference CronJob | `k8s/cronjob.yaml` | ~20 s every 15 min; AOAI usage a few $/mo |
 | Container image | `Dockerfile` + ACR `acrmeshops` | ACR Basic storage (prune old tags) |
 
 ---

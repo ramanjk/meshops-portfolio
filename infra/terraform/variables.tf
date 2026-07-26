@@ -140,3 +140,40 @@ variable "allowed_ssh_source_cidrs" {
   description = "Source IP CIDRs allowed to SSH the jumpbox. Defaults to this WSL box's detected egress IPs."
   default     = ["74.162.222.29/32", "74.162.222.32/32"]
 }
+
+# --- Azure OpenAI ------------------------------------------------------------
+variable "openai_location" {
+  type        = string
+  description = "Region for the Azure OpenAI account (gpt-4.1 availability varies by region)."
+  default     = "eastus2"
+}
+
+variable "openai_chat_deployment_name" {
+  type        = string
+  description = "Deployment name the steward calls (must match Helm env.azureOpenAiChatDeploymentName)."
+  default     = "gpt-4.1"
+}
+
+variable "openai_model_name" {
+  type        = string
+  description = "Azure OpenAI model to deploy."
+  default     = "gpt-4.1"
+}
+
+variable "openai_model_version" {
+  type        = string
+  description = "Model version for the deployment."
+  default     = "2025-04-14"
+}
+
+variable "openai_deployment_sku_name" {
+  type        = string
+  description = "Deployment SKU (GlobalStandard has the widest gpt-4.1 availability)."
+  default     = "GlobalStandard"
+}
+
+variable "openai_deployment_capacity" {
+  type        = number
+  description = "Deployment capacity in thousands of tokens/min (TPM). Small is plenty for the lab."
+  default     = 10
+}

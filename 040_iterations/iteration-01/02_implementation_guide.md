@@ -1253,7 +1253,7 @@ docker push "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1"
 
 ## 10. The Infrastructure (Terraform)
 
-Where we are in the story: the code is built, tested, and containerised — but it needs somewhere to run. This is the complete `infra/terraform/` set that `05_deployment_guide.md` applies. It stands up AKS inside a custom VNet, a **private Key Vault** (public access disabled, reached only through a private endpoint), Workload Identity, Managed Prometheus + Grafana, ACR, and an in-VNet **jumpbox VM** you SSH into to write the Langfuse secrets. Apply it with `terraform apply -var "subscription_id=$(az account show --query id -o tsv)"` — you must be `az login`'d first, because the KAITO add-on is enabled by a `local-exec` call to `az aks update`.
+Where we are in the story: the code is built, tested, and containerised — but it needs somewhere to run. This is the complete `infra/terraform/` set that `05_deployment_guide.md` applies. It stands up AKS inside a custom VNet, a **private Key Vault** (public access disabled, reached only through a private endpoint), Workload Identity, Managed Prometheus + Grafana, ACR, an **Azure OpenAI** account with a gpt-4.1 deployment, and an in-VNet **jumpbox VM** you SSH into to write the Langfuse secrets. Apply it with `terraform apply -var "subscription_id=$(az account show --query id -o tsv)"` — you must be `az login`'d first, because the KAITO add-on is enabled by a `local-exec` call to `az aks update`.
 
 ### `infra/terraform/providers.tf`
 
@@ -1299,7 +1299,7 @@ provider "random" {}
 
 ### `infra/terraform/variables.tf`
 
-*Purpose: every tunable — resource names, region, subnet CIDRs, Grafana version, jumpbox sizing, and the SSH allow-list — each defaulted for the lab so a bare `apply` works.*
+*Purpose: every tunable — names, region, CIDRs, jumpbox size, Grafana version, and the Azure OpenAI model/SKU settings.*
 
 ```hcl
 variable "subscription_id" {
@@ -1444,11 +1444,48 @@ variable "allowed_ssh_source_cidrs" {
   description = "Source IP CIDRs allowed to SSH the jumpbox. Defaults to this WSL box's detected egress IPs."
   default     = ["74.162.222.29/32", "74.162.222.32/32"]
 }
+
+# --- Azure OpenAI ------------------------------------------------------------
+variable "openai_location" {
+  type        = string
+  description = "Region for the Azure OpenAI account (gpt-4.1 availability varies by region)."
+  default     = "eastus2"
+}
+
+variable "openai_chat_deployment_name" {
+  type        = string
+  description = "Deployment name the steward calls (must match Helm env.azureOpenAiChatDeploymentName)."
+  default     = "gpt-4.1"
+}
+
+variable "openai_model_name" {
+  type        = string
+  description = "Azure OpenAI model to deploy."
+  default     = "gpt-4.1"
+}
+
+variable "openai_model_version" {
+  type        = string
+  description = "Model version for the deployment."
+  default     = "2025-04-14"
+}
+
+variable "openai_deployment_sku_name" {
+  type        = string
+  description = "Deployment SKU (GlobalStandard has the widest gpt-4.1 availability)."
+  default     = "GlobalStandard"
+}
+
+variable "openai_deployment_capacity" {
+  type        = number
+  description = "Deployment capacity in thousands of tokens/min (TPM). Small is plenty for the lab."
+  default     = 10
+}
 ```
 
 ### `infra/terraform/network.tf`
 
-*Purpose: the VNet, its three subnets (AKS, private-link, jumpbox), and the `privatelink.vaultcore.azure.net` private DNS zone linked to the VNet.*
+*Purpose: the custom VNet, the AKS / private-endpoint / jumpbox subnets, and the private DNS zone for Key Vault.*
 
 ```hcl
 # Lab VNet: AKS, private endpoints, and the jumpbox all live here so the private
@@ -1504,7 +1541,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "kv" {
 
 ### `infra/terraform/main.tf`
 
-*Purpose: the resource group, ACR (Basic), the AKS cluster (OIDC + Workload Identity + Managed Prometheus, node pool in `snet-aks`), the KAITO add-on via `local-exec`, and the kubelet `AcrPull` grant.*
+*Purpose: the resource group, ACR, and the AKS cluster (OIDC + Workload Identity + managed Prometheus), plus the KAITO add-on and the kubelet AcrPull role.*
 
 ```hcl
 resource "azurerm_resource_group" "this" {
@@ -1544,6 +1581,10 @@ resource "azurerm_kubernetes_cluster" "this" {
     node_labels = {
       "meshops.io/pool" = "system"
     }
+    # Match the AKS default so it doesn't show as perpetual drift.
+    upgrade_settings {
+      max_surge = "10%"
+    }
   }
 
   identity {
@@ -1559,6 +1600,13 @@ resource "azurerm_kubernetes_cluster" "this" {
     network_policy = "azure"
     service_cidr   = var.aks_service_cidr
     dns_service_ip = var.aks_dns_service_ip
+  }
+
+  lifecycle {
+    # Microsoft Defender for Containers is enabled by an org Azure Policy and
+    # points at a Defender-managed Log Analytics workspace. Leave it alone so
+    # Terraform neither disables it nor churns on the policy-injected drift.
+    ignore_changes = [microsoft_defender]
   }
 }
 
@@ -1592,7 +1640,7 @@ resource "azurerm_role_assignment" "kubelet_acrpull" {
 
 ### `infra/terraform/identity.tf`
 
-*Purpose: the steward's user-assigned identity, the federated credential trusting the `meshops/hello-inference` ServiceAccount, and its read access to AKS.*
+*Purpose: the hello-inference user-assigned managed identity and its federated credential (the trust link to the Kubernetes service account).*
 
 ```hcl
 # User-assigned identity the steward federates to via Workload Identity.
@@ -1626,7 +1674,7 @@ resource "azurerm_role_assignment" "steward_aks_reader" {
 
 ### `infra/terraform/keyvault.tf`
 
-*Purpose: the private Key Vault (public network access disabled, default-deny ACLs), its private endpoint + DNS zone group, and the RBAC role assignments.*
+*Purpose: the private Key Vault (public access disabled), its private endpoint + DNS zone group, and the RBAC role assignments.*
 
 ```hcl
 data "azurerm_client_config" "current" {}
@@ -1702,9 +1750,67 @@ resource "azurerm_role_assignment" "steward_kv_reader" {
 }
 ```
 
+### `infra/terraform/openai.tf`
+
+*Purpose: the Azure OpenAI account, the gpt-4.1 chat deployment, and the 'Cognitive Services OpenAI User' data-plane roles for the steward MSI and the operator.*
+
+```hcl
+# --- Azure OpenAI: the steward's reasoning model -----------------------------
+# The agent authenticates with Entra ID (Workload Identity in-cluster), so the
+# account needs a custom subdomain and the steward identity needs the
+# "Cognitive Services OpenAI User" data-plane role. No API keys are used.
+
+resource "random_string" "aoai_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+  numeric = true
+}
+
+resource "azurerm_cognitive_account" "openai" {
+  name                  = "aoai-meshops-${random_string.aoai_suffix.result}"
+  resource_group_name   = azurerm_resource_group.this.name
+  location              = var.openai_location
+  kind                  = "OpenAI"
+  sku_name              = "S0"
+  custom_subdomain_name = "aoai-meshops-${random_string.aoai_suffix.result}"
+  tags                  = var.tags
+}
+
+resource "azurerm_cognitive_deployment" "chat" {
+  name                 = var.openai_chat_deployment_name
+  cognitive_account_id = azurerm_cognitive_account.openai.id
+
+  model {
+    format  = "OpenAI"
+    name    = var.openai_model_name
+    version = var.openai_model_version
+  }
+
+  sku {
+    name     = var.openai_deployment_sku_name
+    capacity = var.openai_deployment_capacity
+  }
+}
+
+# The steward (in-cluster, via Workload Identity) calls the model.
+resource "azurerm_role_assignment" "steward_openai_user" {
+  scope                = azurerm_cognitive_account.openai.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_user_assigned_identity.hello_inference.principal_id
+}
+
+# The operator can call it too (e.g. running the agent locally after `az login`).
+resource "azurerm_role_assignment" "operator_openai_user" {
+  scope                = azurerm_cognitive_account.openai.id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+```
+
 ### `infra/terraform/monitoring.tf`
 
-*Purpose: the Azure Monitor Workspace, the Data Collection Endpoint/Rule/Association that land managed-Prometheus metrics, and Managed Grafana wired to the workspace.*
+*Purpose: the Azure Monitor Workspace, the data-collection rule + association, and Managed Grafana with its data-reader roles.*
 
 ```hcl
 # --- Azure Monitor Workspace (Managed Prometheus backend) --------------------
@@ -1804,7 +1910,7 @@ resource "azurerm_role_assignment" "operator_grafana_admin" {
 
 ### `infra/terraform/vm.tf`
 
-*Purpose: the jumpbox — generated SSH key, public IP (ignoring Azure-injected ip_tags), NSG locked to your egress IP, Ubuntu VM with az-cli via cloud-init, and its Key Vault Secrets Officer role.*
+*Purpose: the in-VNet jumpbox VM (generated SSH key, locked-down NSG, managed identity) you hop through to reach the private Key Vault.*
 
 ```hcl
 # --- Jumpbox: the only place you can reach the private Key Vault -------------
@@ -1949,7 +2055,7 @@ resource "azurerm_role_assignment" "jumpbox_kv_secrets_officer" {
 
 ### `infra/terraform/outputs.tf`
 
-*Purpose: every value the Helm install and deploy steps consume, plus the ready-to-run jumpbox SSH command and secret-writing hint.*
+*Purpose: everything Helm and the operator consume — names, IDs, the jumpbox SSH command, and the Azure OpenAI endpoint/deployment.*
 
 ```hcl
 output "aks_resource_id" {
@@ -1997,6 +2103,16 @@ output "grafana_endpoint" {
   value       = azurerm_dashboard_grafana.this.endpoint
 }
 
+output "azure_openai_endpoint" {
+  description = "Azure OpenAI endpoint — Helm env.azureOpenAiEndpoint."
+  value       = azurerm_cognitive_account.openai.endpoint
+}
+
+output "azure_openai_chat_deployment_name" {
+  description = "Deployment name — Helm env.azureOpenAiChatDeploymentName."
+  value       = azurerm_cognitive_deployment.chat.name
+}
+
 output "jumpbox_public_ip" {
   description = "Public IP of the jumpbox (SSH target)."
   value       = var.create_jumpbox ? azurerm_public_ip.jumpbox[0].ip_address : null
@@ -2021,8 +2137,6 @@ output "write_secrets_hint" {
   ) : null
 }
 ```
-
----
 
 ## 11. Where to Go Next
 
@@ -2049,6 +2163,7 @@ Where we are in the story: the code is written, tested locally, and containerise
 | `infra/terraform/main.tf` | AKS (in VNet) + ACR + KAITO add-on | (deploy) |
 | `infra/terraform/network.tf` | VNet, subnets, private DNS zone | (deploy) |
 | `infra/terraform/keyvault.tf` | Private Key Vault + private endpoint | AC-8 |
+| `infra/terraform/openai.tf` | Azure OpenAI account + gpt-4.1 deployment + data-plane RBAC | AC-2, AC-3 |
 | `infra/terraform/identity.tf` | Workload-Identity federation + RBAC | AC-1 |
 | `infra/terraform/monitoring.tf` | Managed Prometheus + Grafana wiring | AC-9 |
 | `infra/terraform/vm.tf` | In-VNet jumpbox for writing KV secrets | (deploy) |

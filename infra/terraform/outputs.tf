@@ -43,6 +43,16 @@ output "grafana_endpoint" {
   value       = azurerm_dashboard_grafana.this.endpoint
 }
 
+output "azure_openai_endpoint" {
+  description = "Azure OpenAI endpoint — Helm env.azureOpenAiEndpoint."
+  value       = azurerm_cognitive_account.openai.endpoint
+}
+
+output "azure_openai_chat_deployment_name" {
+  description = "Deployment name — Helm env.azureOpenAiChatDeploymentName."
+  value       = azurerm_cognitive_deployment.chat.name
+}
+
 output "jumpbox_public_ip" {
   description = "Public IP of the jumpbox (SSH target)."
   value       = var.create_jumpbox ? azurerm_public_ip.jumpbox[0].ip_address : null

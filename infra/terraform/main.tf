@@ -35,6 +35,10 @@ resource "azurerm_kubernetes_cluster" "this" {
     node_labels = {
       "meshops.io/pool" = "system"
     }
+    # Match the AKS default so it doesn't show as perpetual drift.
+    upgrade_settings {
+      max_surge = "10%"
+    }
   }
 
   identity {
@@ -50,6 +54,13 @@ resource "azurerm_kubernetes_cluster" "this" {
     network_policy = "azure"
     service_cidr   = var.aks_service_cidr
     dns_service_ip = var.aks_dns_service_ip
+  }
+
+  lifecycle {
+    # Microsoft Defender for Containers is enabled by an org Azure Policy and
+    # points at a Defender-managed Log Analytics workspace. Leave it alone so
+    # Terraform neither disables it nor churns on the policy-injected drift.
+    ignore_changes = [microsoft_defender]
   }
 }
 
