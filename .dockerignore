@@ -1,0 +1,40 @@
+# Build context hygiene: keep the image small and NEVER ship secrets/state.
+
+# Python virtualenv + caches (923MB; deps are installed via uv in the image)
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Terraform state contains secrets + the jumpbox private key — must not leave the box
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/tfplan
+infra/terraform/*.tfvars
+infra/terraform/jumpbox_id_ed25519
+infra/terraform/jumpbox_id_ed25519.pub
+
+# VCS + tooling
+.git/
+.github/
+.gitignore
+
+# Docs / non-runtime content not needed to build the app
+020_project_proposal/
+030_design/
+035_others/
+040_iterations/
+dashboards/
+helm/
+k8s/
+*.md
+# ...but pyproject.toml references README.md, so hatchling needs it to build.
+!README.md
+
+# Local session/editor artifacts
+.copilot/
+.vscode/
+.idea/
