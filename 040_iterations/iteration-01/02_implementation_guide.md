@@ -1253,7 +1253,7 @@ docker push "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1"
 
 ## 10. The Infrastructure (Terraform)
 
-Where we are in the story: the code is built, tested, and containerised — but it needs somewhere to run. This is the complete `infra/terraform/` set that `05_deployment_guide.md` applies. It stands up AKS inside a custom VNet, a **private Key Vault** (public access disabled, reached only through a private endpoint), Workload Identity, Managed Prometheus + Grafana, ACR, an **Azure OpenAI** account with a gpt-4.1 deployment, and an in-VNet **jumpbox VM** you SSH into to write the Langfuse secrets. Apply it with `terraform apply -var "subscription_id=$(az account show --query id -o tsv)"` — you must be `az login`'d first, because the KAITO add-on is enabled by a `local-exec` call to `az aks update`.
+Where we are in the story: the code is built, tested, and containerised — but it needs somewhere to run. This is the complete `infra/terraform/` set that `05_deployment_guide.md` applies. It stands up AKS inside a custom VNet (with an **autoscaled** system node pool — a single small node cannot hold Langfuse + system pods + Defender + the KAITO controllers), a **private Key Vault** (public access disabled, reached only through a private endpoint), Workload Identity, Managed Prometheus + Grafana, ACR, an **Azure OpenAI** account with a gpt-4.1 deployment, and an in-VNet **jumpbox VM** you SSH into to write the Langfuse secrets. Apply it with `terraform apply -var "subscription_id=$(az account show --query id -o tsv)"` — you must be `az login`'d first, because the KAITO add-on is enabled by a `local-exec` call to `az aks update`.
 
 ### `infra/terraform/providers.tf`
 
@@ -1299,7 +1299,7 @@ provider "random" {}
 
 ### `infra/terraform/variables.tf`
 
-*Purpose: every tunable — names, region, CIDRs, jumpbox size, Grafana version, and the Azure OpenAI model/SKU settings.*
+*Purpose: every tunable — names, region, CIDRs, jumpbox size, the autoscaled system-pool min/max, Grafana version, and the Azure OpenAI model/SKU settings.*
 
 ```hcl
 variable "subscription_id" {
@@ -1329,6 +1329,18 @@ variable "system_node_vm_size" {
   type        = string
   description = "VM size for the single system node pool (the always-on cost floor)."
   default     = "Standard_D2as_v5"
+}
+
+variable "system_node_min_count" {
+  type        = number
+  description = "Minimum nodes in the autoscaled system pool (the always-on floor). Must hold Langfuse + system + Defender + KAITO controllers."
+  default     = 2
+}
+
+variable "system_node_max_count" {
+  type        = number
+  description = "Maximum nodes the system pool can scale out to (e.g. during KAITO install spikes or heavier demos)."
+  default     = 10
 }
 
 variable "acr_name" {
@@ -1441,8 +1453,8 @@ variable "jumpbox_admin_username" {
 
 variable "allowed_ssh_source_cidrs" {
   type        = list(string)
-  description = "Source IP CIDRs allowed to SSH the jumpbox. Defaults to this WSL box's detected egress IPs."
-  default     = ["74.162.222.29/32", "74.162.222.32/32"]
+  description = "Source IP CIDRs allowed to SSH the jumpbox. This WSL box egresses through a rotating Microsoft NAT pool in 74.162.222.0/24 (observed .25/.28/.29/.32), so we allow that block rather than chase single IPs. Key-only auth keeps it safe enough for a lab jumpbox."
+  default     = ["74.162.222.0/24"]
 }
 
 # --- Azure OpenAI ------------------------------------------------------------
@@ -1541,7 +1553,7 @@ resource "azurerm_private_dns_zone_virtual_network_link" "kv" {
 
 ### `infra/terraform/main.tf`
 
-*Purpose: the resource group, ACR, and the AKS cluster (OIDC + Workload Identity + managed Prometheus), plus the KAITO add-on and the kubelet AcrPull role.*
+*Purpose: the resource group, ACR, and the AKS cluster (OIDC + Workload Identity + managed Prometheus, autoscaled system pool), plus the KAITO add-on (re-asserted every apply because the provider's cluster PUT wipes it) and the kubelet AcrPull role.*
 
 ```hcl
 resource "azurerm_resource_group" "this" {
@@ -1575,8 +1587,16 @@ resource "azurerm_kubernetes_cluster" "this" {
   default_node_pool {
     name           = "system"
     vm_size        = var.system_node_vm_size
-    node_count     = 1
     vnet_subnet_id = azurerm_subnet.aks.id
+
+    # A single small node can't hold Langfuse (ClickHouse/Postgres/Redis/MinIO/
+    # web/worker) + system pods + Defender + the KAITO controllers, which left
+    # the KAITO Helm install stuck on "context deadline exceeded". Autoscale so
+    # there is room, and scale back toward the floor when idle.
+    auto_scaling_enabled = true
+    min_count            = var.system_node_min_count
+    max_count            = var.system_node_max_count
+
     # No GPU here — KAITO provisions the T4 spot node only when a Workspace needs it.
     node_labels = {
       "meshops.io/pool" = "system"
@@ -1606,7 +1626,11 @@ resource "azurerm_kubernetes_cluster" "this" {
     # Microsoft Defender for Containers is enabled by an org Azure Policy and
     # points at a Defender-managed Log Analytics workspace. Leave it alone so
     # Terraform neither disables it nor churns on the policy-injected drift.
-    ignore_changes = [microsoft_defender]
+    # The cluster autoscaler owns the node count, so ignore it too.
+    ignore_changes = [
+      microsoft_defender,
+      default_node_pool[0].node_count,
+    ]
   }
 }
 
@@ -1614,17 +1638,33 @@ resource "azurerm_kubernetes_cluster" "this" {
 # The azurerm provider does not yet expose ai_toolchain_operator_enabled on the
 # cluster resource, so enable the managed KAITO add-on out-of-band. Idempotent.
 resource "null_resource" "kaito_addon" {
+  # Re-evaluate on every apply: the azurerm provider doesn't manage
+  # aiToolchainOperatorProfile, and its cluster PUT on any in-place update wipes
+  # the add-on back to disabled. A cluster_id-only trigger would never re-run
+  # after such an update, silently leaving KAITO off. We instead check on every
+  # apply and only pay the slow `az aks update` when the add-on is actually off.
   triggers = {
-    cluster_id = azurerm_kubernetes_cluster.this.id
+    always = timestamp()
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
-      az aks update \
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      enabled=$(az aks show \
         --resource-group ${azurerm_resource_group.this.name} \
         --name ${azurerm_kubernetes_cluster.this.name} \
-        --enable-ai-toolchain-operator \
-        --only-show-errors
+        --query "aiToolchainOperatorProfile.enabled" -o tsv 2>/dev/null || echo "false")
+      if [ "$enabled" != "true" ]; then
+        echo "Enabling AI toolchain operator (KAITO) add-on..."
+        az aks update \
+          --resource-group ${azurerm_resource_group.this.name} \
+          --name ${azurerm_kubernetes_cluster.this.name} \
+          --enable-ai-toolchain-operator \
+          --only-show-errors
+      else
+        echo "AI toolchain operator (KAITO) add-on already enabled."
+      fi
     EOT
   }
 }
@@ -1752,7 +1792,7 @@ resource "azurerm_role_assignment" "steward_kv_reader" {
 
 ### `infra/terraform/openai.tf`
 
-*Purpose: the Azure OpenAI account, the gpt-4.1 chat deployment, and the 'Cognitive Services OpenAI User' data-plane roles for the steward MSI and the operator.*
+*Purpose: the Azure OpenAI account (local/key auth disabled to match org policy — Entra-only), the gpt-4.1 chat deployment, and the 'Cognitive Services OpenAI User' data-plane roles for the steward MSI and the operator.*
 
 ```hcl
 # --- Azure OpenAI: the steward's reasoning model -----------------------------
@@ -1774,7 +1814,14 @@ resource "azurerm_cognitive_account" "openai" {
   kind                  = "OpenAI"
   sku_name              = "S0"
   custom_subdomain_name = "aoai-meshops-${random_string.aoai_suffix.result}"
-  tags                  = var.tags
+
+  # An org Azure Policy disables API-key (local) auth on Cognitive accounts and
+  # enforces Entra ID auth. The steward already authenticates with Workload
+  # Identity / DefaultAzureCredential (no key), so we align with the policy —
+  # this hardens the account and stops the perpetual local_auth_enabled drift.
+  local_auth_enabled = false
+
+  tags = var.tags
 }
 
 resource "azurerm_cognitive_deployment" "chat" {
@@ -2055,7 +2102,7 @@ resource "azurerm_role_assignment" "jumpbox_kv_secrets_officer" {
 
 ### `infra/terraform/outputs.tf`
 
-*Purpose: everything Helm and the operator consume — names, IDs, the jumpbox SSH command, and the Azure OpenAI endpoint/deployment.*
+*Purpose: everything Helm and the operator consume — names, IDs, the (absolute-path) jumpbox SSH command, and the Azure OpenAI endpoint/deployment.*
 
 ```hcl
 output "aks_resource_id" {
@@ -2121,8 +2168,8 @@ output "jumpbox_public_ip" {
 output "jumpbox_ssh_command" {
   description = "Ready-to-run SSH command from WSL into the jumpbox."
   value = var.create_jumpbox ? format(
-    "ssh -i %s/jumpbox_id_ed25519 %s@%s",
-    path.module,
+    "ssh -i %s %s@%s",
+    abspath("${path.module}/jumpbox_id_ed25519"),
     var.jumpbox_admin_username,
     azurerm_public_ip.jumpbox[0].ip_address,
   ) : null

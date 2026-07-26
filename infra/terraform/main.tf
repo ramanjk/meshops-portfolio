@@ -29,8 +29,16 @@ resource "azurerm_kubernetes_cluster" "this" {
   default_node_pool {
     name           = "system"
     vm_size        = var.system_node_vm_size
-    node_count     = 1
     vnet_subnet_id = azurerm_subnet.aks.id
+
+    # A single small node can't hold Langfuse (ClickHouse/Postgres/Redis/MinIO/
+    # web/worker) + system pods + Defender + the KAITO controllers, which left
+    # the KAITO Helm install stuck on "context deadline exceeded". Autoscale so
+    # there is room, and scale back toward the floor when idle.
+    auto_scaling_enabled = true
+    min_count            = var.system_node_min_count
+    max_count            = var.system_node_max_count
+
     # No GPU here — KAITO provisions the T4 spot node only when a Workspace needs it.
     node_labels = {
       "meshops.io/pool" = "system"
@@ -60,7 +68,11 @@ resource "azurerm_kubernetes_cluster" "this" {
     # Microsoft Defender for Containers is enabled by an org Azure Policy and
     # points at a Defender-managed Log Analytics workspace. Leave it alone so
     # Terraform neither disables it nor churns on the policy-injected drift.
-    ignore_changes = [microsoft_defender]
+    # The cluster autoscaler owns the node count, so ignore it too.
+    ignore_changes = [
+      microsoft_defender,
+      default_node_pool[0].node_count,
+    ]
   }
 }
 
@@ -68,17 +80,33 @@ resource "azurerm_kubernetes_cluster" "this" {
 # The azurerm provider does not yet expose ai_toolchain_operator_enabled on the
 # cluster resource, so enable the managed KAITO add-on out-of-band. Idempotent.
 resource "null_resource" "kaito_addon" {
+  # Re-evaluate on every apply: the azurerm provider doesn't manage
+  # aiToolchainOperatorProfile, and its cluster PUT on any in-place update wipes
+  # the add-on back to disabled. A cluster_id-only trigger would never re-run
+  # after such an update, silently leaving KAITO off. We instead check on every
+  # apply and only pay the slow `az aks update` when the add-on is actually off.
   triggers = {
-    cluster_id = azurerm_kubernetes_cluster.this.id
+    always = timestamp()
   }
 
   provisioner "local-exec" {
-    command = <<-EOT
-      az aks update \
+    interpreter = ["/bin/bash", "-c"]
+    command     = <<-EOT
+      set -euo pipefail
+      enabled=$(az aks show \
         --resource-group ${azurerm_resource_group.this.name} \
         --name ${azurerm_kubernetes_cluster.this.name} \
-        --enable-ai-toolchain-operator \
-        --only-show-errors
+        --query "aiToolchainOperatorProfile.enabled" -o tsv 2>/dev/null || echo "false")
+      if [ "$enabled" != "true" ]; then
+        echo "Enabling AI toolchain operator (KAITO) add-on..."
+        az aks update \
+          --resource-group ${azurerm_resource_group.this.name} \
+          --name ${azurerm_kubernetes_cluster.this.name} \
+          --enable-ai-toolchain-operator \
+          --only-show-errors
+      else
+        echo "AI toolchain operator (KAITO) add-on already enabled."
+      fi
     EOT
   }
 }

@@ -17,7 +17,14 @@ resource "azurerm_cognitive_account" "openai" {
   kind                  = "OpenAI"
   sku_name              = "S0"
   custom_subdomain_name = "aoai-meshops-${random_string.aoai_suffix.result}"
-  tags                  = var.tags
+
+  # An org Azure Policy disables API-key (local) auth on Cognitive accounts and
+  # enforces Entra ID auth. The steward already authenticates with Workload
+  # Identity / DefaultAzureCredential (no key), so we align with the policy —
+  # this hardens the account and stops the perpetual local_auth_enabled drift.
+  local_auth_enabled = false
+
+  tags = var.tags
 }
 
 resource "azurerm_cognitive_deployment" "chat" {

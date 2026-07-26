@@ -27,6 +27,18 @@ variable "system_node_vm_size" {
   default     = "Standard_D2as_v5"
 }
 
+variable "system_node_min_count" {
+  type        = number
+  description = "Minimum nodes in the autoscaled system pool (the always-on floor). Must hold Langfuse + system + Defender + KAITO controllers."
+  default     = 2
+}
+
+variable "system_node_max_count" {
+  type        = number
+  description = "Maximum nodes the system pool can scale out to (e.g. during KAITO install spikes or heavier demos)."
+  default     = 10
+}
+
 variable "acr_name" {
   type        = string
   description = "Azure Container Registry name (globally unique, alphanumeric only)."
@@ -137,8 +149,8 @@ variable "jumpbox_admin_username" {
 
 variable "allowed_ssh_source_cidrs" {
   type        = list(string)
-  description = "Source IP CIDRs allowed to SSH the jumpbox. Defaults to this WSL box's detected egress IPs."
-  default     = ["74.162.222.29/32", "74.162.222.32/32"]
+  description = "Source IP CIDRs allowed to SSH the jumpbox. This WSL box egresses through a rotating Microsoft NAT pool in 74.162.222.0/24 (observed .25/.28/.29/.32), so we allow that block rather than chase single IPs. Key-only auth keeps it safe enough for a lab jumpbox."
+  default     = ["74.162.222.0/24"]
 }
 
 # --- Azure OpenAI ------------------------------------------------------------

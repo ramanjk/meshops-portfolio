@@ -61,8 +61,8 @@ output "jumpbox_public_ip" {
 output "jumpbox_ssh_command" {
   description = "Ready-to-run SSH command from WSL into the jumpbox."
   value = var.create_jumpbox ? format(
-    "ssh -i %s/jumpbox_id_ed25519 %s@%s",
-    path.module,
+    "ssh -i %s %s@%s",
+    abspath("${path.module}/jumpbox_id_ed25519"),
     var.jumpbox_admin_username,
     azurerm_public_ip.jumpbox[0].ip_address,
   ) : null

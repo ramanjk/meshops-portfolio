@@ -202,13 +202,36 @@ Where we are in the story: the substrate is up; now the moving parts go on. Firs
 
 ### 3.1 Langfuse — the observability backend
 
+Langfuse's `values.yaml` keeps **no plaintext secrets** — every credential is a
+`secretKeyRef`/`existingSecret` pointing at a Kubernetes Secret named
+`langfuse-secrets`. Create that Secret first with the helper script (it generates
+`openssl rand -hex` values — URL-safe, so the DB connection strings need no
+URL-encoding — and is idempotent, so it won't clobber an existing Secret):
+
 ```bash
 helm repo add langfuse https://langfuse.github.io/langfuse-k8s
 helm repo update
-kubectl create namespace langfuse
+
+# Creates namespace `langfuse` + the `langfuse-secrets` Secret (no secrets in git):
+./helm/langfuse/create-langfuse-secret.sh
+
 helm install langfuse langfuse/langfuse -n langfuse -f helm/langfuse/values.yaml
 kubectl rollout status -n langfuse deploy/langfuse-web --timeout=10m
 ```
+
+> **Two things the stock chart gets wrong for a small lab, already fixed in our
+> `values.yaml`:** (1) ClickHouse defaults to a 3-replica cluster with ZooKeeper
+> and a `2xlarge` resource preset — we run a single standalone node
+> (`clusterEnabled: false`, `zookeeper.enabled: false`), which also matches the
+> app's `CLICKHOUSE_CLUSTER_ENABLED=false` and avoids a startup deadlock where the
+> native `9000` port never opens. (2) The `langfuse-web` pod (Next.js 16) OOMs
+> under the default heap — we give it a 2 Gi limit and
+> `NODE_OPTIONS=--max-old-space-size=1536`.
+>
+> Langfuse is heavy (ClickHouse + Postgres + Redis + MinIO + web + worker). It is
+> the main reason the AKS system pool is **autoscaled (min 2)** rather than a
+> single node — a lone 8 GB node leaves those pods `Pending` and later starves the
+> KAITO controller install.
 
 Once Langfuse is up, port-forward and create a project to get its API keys. Because the Key Vault has **public access disabled**, you cannot write the secrets from WSL — you write them **from the jumpbox**, which reaches the vault through the private endpoint:
 
@@ -217,7 +240,8 @@ Once Langfuse is up, port-forward and create a project to get its API keys. Beca
 kubectl port-forward -n langfuse svc/langfuse-web 3000:3000 &
 # http://localhost:3000 → Settings → API Keys → create → copy pk-lf-... and sk-lf-...
 
-# SSH into the jumpbox (uses the key Terraform generated at infra/terraform/jumpbox_id_ed25519)
+# SSH into the jumpbox. The output emits an ABSOLUTE path to the generated key,
+# so it works from any directory:
 eval "$(terraform -chdir=infra/terraform output -raw jumpbox_ssh_command)"
 
 # On the jumpbox: auth as the VM's managed identity, then write the secrets.
@@ -230,8 +254,11 @@ exit
 ```
 
 > The agent pods read these back through the Key Vault CSI driver, which resolves
-> the same private endpoint from inside `snet-aks`. If SSH is refused, your WSL
-> egress IP rotated — update `allowed_ssh_source_cidrs` in Terraform and re-apply.
+> the same private endpoint from inside `snet-aks`. If SSH **times out**, your WSL
+> egress IP rotated out of the allow-list — this box egresses through a rotating
+> Microsoft NAT pool, so `allowed_ssh_source_cidrs` defaults to the whole
+> `74.162.222.0/24` block; if yours differs, update it in Terraform and re-apply
+> just the NSG: `terraform apply -target=azurerm_network_security_group.jumpbox`.
 
 This is the **AgentOps observability backend wired the zero-idle way**: Langfuse self-hosts in-cluster (no third-party SaaS collector, no per-seat bill), and the agent metrics ride Azure Managed Prometheus + Managed Grafana — both on the free/included tier for this volume. There is no always-on external collector to pay for.
 
@@ -244,6 +271,20 @@ kubectl apply -f helm/stewards/extras/workspace.yaml
 kubectl wait workspace/lab-phi-4-mini-eus2-01 -n meshops-workloads \
     --for=condition=WorkspaceReady --timeout=20m
 ```
+
+> **If the KAITO add-on itself won't install** (`az aks update
+> --enable-ai-toolchain-operator` hangs, and the activity log shows
+> `ExtensionOperationFailed … Helm installation failed : context deadline
+> exceeded`), it's almost always **node capacity** — the controller pods can't
+> schedule. Check `kubectl get pods -A --field-selector=status.phase=Pending`.
+> Our autoscaled system pool (min 2) normally prevents this, but if you pinned it
+> to one node you can get wedged: the cluster sits in `Updating` and won't accept
+> a scale op. Break the deadlock with
+> `az aks operation-abort -g rg-meshops-sandbox -n aks-meshops-lab`, then
+> `az aks nodepool scale … --node-count 3`, then re-run the enable. Because the
+> `azurerm` provider's cluster PUT silently disables the add-on on any in-place
+> update, our `null_resource.kaito_addon` re-asserts it on every `terraform apply`
+> (skipping the slow call when it's already on).
 
 ### 3.3 The image and the chart
 
@@ -415,7 +456,7 @@ terraform -chdir=infra/terraform destroy -var "subscription_id=$(az account show
 | Jumpbox VM + public IP + NSG | `infra/terraform/vm.tf` | VM compute + static IP — `az vm deallocate` to zero |
 | Managed Prometheus + Grafana | `infra/terraform/monitoring.tf` | Included/free tier at this volume |
 | KAITO Workspace CR | `helm/stewards/extras/workspace.yaml` | $0 GPU when idle |
-| Langfuse | `helm/langfuse/values.yaml` | PVC disk only (demo-grade) |
+| Langfuse | `helm/langfuse/values.yaml` (+ `create-langfuse-secret.sh`) | PVC disk only (demo-grade) |
 | hello-inference CronJob | `k8s/cronjob.yaml` | ~20 s every 15 min; AOAI usage a few $/mo |
 | Container image | `Dockerfile` + ACR `acrmeshops` | ACR Basic storage (prune old tags) |
 
