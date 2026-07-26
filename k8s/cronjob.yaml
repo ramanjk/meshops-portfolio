@@ -1,0 +1,106 @@
+# hello-inference — scheduled (zero-idle) run of the Inference Steward.
+#
+# The deployment guide (§5) replaces the always-on Deployment with this CronJob:
+#   1. helm install ... (creates ServiceAccount, prompt ConfigMap, KV CSI secret)
+#   2. kubectl apply -f k8s/cronjob.yaml
+#   3. kubectl scale deploy/hello-inference -n meshops --replicas=0
+#
+# A bare `kubectl create cronjob --image=...` will NOT work: the steward needs the
+# Workload-Identity ServiceAccount, the prompt ConfigMap, the Key Vault CSI secret,
+# and its env. This manifest mirrors helm/stewards/templates/deployment.yaml so the
+# scheduled pod is wired identically.
+#
+# Replace every REPLACE_ME below with the SAME values you passed to `helm install`
+# (Terraform outputs). They must match, or the pod will fail at boot.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: hello-inference
+  namespace: meshops
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+spec:
+  schedule: "*/15 * * * *"        # every 15 min — plenty for a read-only demo
+  concurrencyPolicy: Forbid       # never overlap cycles
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300   # a cycle must finish within 5 min
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: hello-inference
+            azure.workload.identity/use: "true"
+        spec:
+          restartPolicy: Never
+          serviceAccountName: hello-inference
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: hello-inference
+              image: "REPLACE_ME_ACR_LOGIN_SERVER/meshops/hello-inference:0.0.1"
+              imagePullPolicy: IfNotPresent
+              command: ["uv", "run", "--no-sync", "python", "-m", "stewards.inference"]
+              ports:
+                - name: metrics
+                  containerPort: 9464
+              env:
+                - name: AZURE_OPENAI_ENDPOINT
+                  value: "https://REPLACE_ME_AOAI_NAME.openai.azure.com/"
+                - name: AZURE_OPENAI_CHAT_DEPLOYMENT_NAME
+                  value: "gpt-4.1"
+                - name: LANGFUSE_HOST
+                  value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+                - name: AKS_RESOURCE_ID
+                  value: "REPLACE_ME_AKS_RESOURCE_ID"
+                - name: WORKSPACE_NAMESPACE
+                  value: "meshops-workloads"
+                - name: WORKSPACE_NAME
+                  value: "lab-phi-4-mini-eus2-01"
+                - name: AZURE_MONITOR_WORKSPACE_QUERY_URL
+                  value: "REPLACE_ME_AMP_QUERY_URL"
+                - name: LANGFUSE_PUBLIC_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: hello-inference-secrets
+                      key: LANGFUSE_PUBLIC_KEY
+                - name: LANGFUSE_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: hello-inference-secrets
+                      key: LANGFUSE_SECRET_KEY
+              volumeMounts:
+                - name: prompts
+                  mountPath: /etc/prompts
+                  readOnly: true
+                - name: secrets-store
+                  mountPath: /mnt/secrets-store
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 256Mi
+                limits:
+                  cpu: 1000m
+                  memory: 1Gi
+          volumes:
+            - name: prompts
+              configMap:
+                name: inference-steward-prompts
+            - name: secrets-store
+              csi:
+                driver: secrets-store.csi.k8s.io
+                readOnly: true
+                volumeAttributes:
+                  secretProviderClass: hello-inference-kv

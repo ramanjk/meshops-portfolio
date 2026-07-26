@@ -1,0 +1,98 @@
+# Langfuse self-host — demo-grade values for iteration-01.
+#
+# Goal: the smallest footprint that boots langfuse-web in-cluster so the steward
+# can push OTLP traces to it. NOT production-hardened: single replicas, in-cluster
+# Postgres/Clickhouse/Redis, small PVCs. Delete between demos to stop disk billing
+# (see 05_deployment_guide.md §5 "silent leaks").
+#
+# Chart: langfuse/langfuse (https://langfuse.github.io/langfuse-k8s)
+
+langfuse:
+  replicas: 1
+
+  # These are demo secrets — fine for a private lab, rotate for anything real.
+  # NEXTAUTH_URL is reached via port-forward in the deployment guide.
+  nextauth:
+    url: http://localhost:3000
+    secret: "change-me-nextauth-secret-lab-only"
+
+  salt: "change-me-salt-lab-only"
+  encryptionKey: "0000000000000000000000000000000000000000000000000000000000000000"
+
+  # Keep the web pod small — it only serves the lab UI + OTLP ingest.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+# --- In-cluster datastores (demo-grade single instances) ---------------------
+postgresql:
+  deploy: true
+  auth:
+    password: "change-me-postgres-lab-only"
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+clickhouse:
+  deploy: true
+  replicaCount: 1
+  shards: 1
+  auth:
+    password: "change-me-clickhouse-lab-only"
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  zookeeper:
+    replicaCount: 1
+
+redis:
+  deploy: true
+  architecture: standalone
+  auth:
+    password: "change-me-redis-lab-only"
+  master:
+    persistence:
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+
+# Bitnami S3-compatible object store (Langfuse event/media blobs).
+s3:
+  deploy: true
+  auth:
+    rootUser: "langfuse"
+    rootPassword: "change-me-minio-lab-only"
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

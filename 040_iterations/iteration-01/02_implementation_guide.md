@@ -170,8 +170,8 @@ Where we are in the story: an empty `src/` is intimidating; a scaffold makes it 
 ```bash
 # 3.1 Create the directory tree
 mkdir -p src/stewards/inference src/mcp_servers/prom_mcp \
-         prompts helm/stewards/templates helm/stewards/extras \
-         infra/terraform tests/unit tests/integration dashboards
+         prompts helm/stewards/templates helm/stewards/extras helm/langfuse \
+         infra/terraform k8s tests/unit tests/integration dashboards
 
 # 3.2 Mark the Python packages
 touch src/stewards/__init__.py src/stewards/inference/__init__.py
@@ -201,10 +201,19 @@ repo root
 │   └── mcp_servers/prom_mcp/{__init__,__main__,server}.py
 ├── prompts/{inference-steward.system.md,CHANGELOG.md}
 ├── helm/stewards/{Chart.yaml,values.yaml,templates/*,extras/workspace.yaml}
-├── infra/terraform/*.tf
+├── helm/langfuse/values.yaml
+├── infra/terraform/{providers,variables,main,network,identity,keyvault,monitoring,vm,outputs}.tf
+├── k8s/cronjob.yaml
 ├── tests/{unit,integration}/*.py
 └── dashboards/meshops-p0-hello-agent.json
 ```
+
+> **Deployment artefacts.** The `infra/terraform/*.tf`, `helm/langfuse/values.yaml`,
+> `k8s/cronjob.yaml`, and `dashboards/meshops-p0-hello-agent.json` files are the
+> deployment layer consumed by `05_deployment_guide.md`. The Terraform set stands up
+> AKS (in a custom VNet), a **private Key Vault** (public access disabled, reached via
+> a private endpoint + private DNS), managed identity/federation, Managed Prometheus +
+> Grafana, ACR, and an in-VNet **jumpbox VM** from which the Langfuse secrets are written.
 
 After `uv init`, replace the generated `pyproject.toml` with the complete file below.
 
@@ -1232,8 +1241,8 @@ CMD ["uv", "run", "--no-sync", "python", "-m", "stewards.inference"]
 Build and push (the registry comes from Terraform; see doc 05):
 
 ```bash
-ACR_LOGIN_SERVER=$(az acr show -n acr-meshops --query loginServer -o tsv)
-az acr login -n acr-meshops
+ACR_LOGIN_SERVER=$(terraform -chdir=infra/terraform output -raw acr_login_server)
+az acr login -n acrmeshops
 docker build -t "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1" .
 docker push "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1"
 ```

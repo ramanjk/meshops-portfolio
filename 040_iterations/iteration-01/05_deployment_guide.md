@@ -62,11 +62,13 @@ flowchart LR
     classDef azure fill:#E8F0FE,stroke:#1F6FB8,color:#0B3B66
 
     subgraph SubRG["rg-meshops-sandbox (lab)"]
-        AKS[AKS aks-meshops-lab]:::azure
+        AKS[AKS aks-meshops-lab<br/>in snet-aks]:::azure
         AMW[Azure Monitor Workspace amw-meshops-lab]:::ops
         AMG[Managed Grafana amg-meshops-lab]:::ops
-        KV[Key Vault kv-meshops-...]:::azure
-        ACR[Azure Container Registry acr-meshops]:::azure
+        KV[Key Vault kv-meshops-...<br/>PUBLIC ACCESS DISABLED]:::azure
+        PE[Private Endpoint pe-kv-meshops<br/>in snet-privatelink]:::azure
+        JB[Jumpbox vm-jumpbox-meshops<br/>in snet-jumpbox]:::azure
+        ACR[Azure Container Registry acrmeshops]:::azure
         MSI[managed-identity msi-hello-inference]:::azure
     end
 
@@ -79,7 +81,9 @@ flowchart LR
     end
 
     AKS --- AMW --- AMG
-    AKS --- KV
+    AKS -->|CSI via private DNS| PE
+    PE --- KV
+    JB -->|az keyvault set via private DNS| PE
     AKS --- ACR
     MSI --- KV
     MSI --- AKS
@@ -90,19 +94,25 @@ flowchart LR
     AMW -->|PodMonitor scrape :9464| HI
 ```
 
-***Figure 1: The deployment topology. The KAITO GPU Workspace (blue) scales to zero when idle — the single biggest cost lever in the whole iteration.***
+***Figure 1: The deployment topology. The Key Vault has public access disabled and is reached only through the private endpoint (from AKS pods and the jumpbox via private DNS). The KAITO GPU Workspace (blue) scales to zero when idle — the single biggest cost lever in the whole iteration.***
 
 <details>
 <summary>ASCII fallback</summary>
 
 ```
 rg-meshops-sandbox (lab):
+  vnet-meshops-lab (10.20.0.0/16)
+    ├── snet-aks           → AKS aks-meshops-lab
+    ├── snet-privatelink   → pe-kv-meshops (private endpoint → Key Vault)
+    └── snet-jumpbox       → vm-jumpbox-meshops (SSH from WSL; writes KV secrets)
   AKS aks-meshops-lab
     ├── pods: hello-inference (agent) · aks-mcp/prom-mcp (children)
     │         langfuse-web (ops) · KAITO Workspace (scale-to-zero GPU)
-    ├── managed-identity msi-hello-inference → Key Vault (Reader, KV Secrets User), AKS (Reader, Monitoring Reader)
+    ├── managed-identity msi-hello-inference → Key Vault (Reader, KV Secrets User), AKS (Reader), AMW (Monitoring Data Reader)
     ├── Azure Monitor Workspace amw-meshops-lab → Managed Grafana amg-meshops-lab
-    └── ACR (image pull)
+    └── ACR acrmeshops (image pull)
+  Key Vault kv-meshops-... : PUBLIC ACCESS DISABLED, private endpoint only
+    └── private DNS zone privatelink.vaultcore.azure.net linked to the VNet
 ```
 
 </details>
@@ -150,7 +160,9 @@ terraform plan -var "subscription_id=$(az account show --query id -o tsv)" -out 
 terraform apply tfplan
 ```
 
-The Terraform you apply does the cost-critical thing for you: the AKS cluster enables `workload_identity_enabled`, `oidc_issuer_enabled`, and `ai_toolchain_operator_enabled` (the managed KAITO add-on), and `monitor_metrics {}` turns on Managed Prometheus. The GPU node is **not** provisioned up front — KAITO provisions a spot `Standard_NC4as_T4_v3` only when the Workspace needs it, and returns it when idle. That is scale-to-zero, baked into the infrastructure.
+The Terraform you apply does the cost-critical thing for you: the AKS cluster enables `workload_identity_enabled` and `oidc_issuer_enabled`, and `monitor_metrics {}` turns on Managed Prometheus. The managed **KAITO add-on** is enabled by a `null_resource` `local-exec` that runs `az aks update --enable-ai-toolchain-operator` (the `azurerm` provider doesn't yet expose it as a cluster argument), so **you must be `az login`'d before `terraform apply`**. The GPU node is **not** provisioned up front — KAITO provisions a spot `Standard_NC4as_T4_v3` only when the Workspace needs it, and returns it when idle. That is scale-to-zero, baked into the infrastructure.
+
+Terraform also stands up the **private-networking layer**: a `vnet-meshops-lab` VNet with `snet-aks` / `snet-privatelink` / `snet-jumpbox` subnets, a **Key Vault with public network access disabled** reached through a private endpoint, the `privatelink.vaultcore.azure.net` private DNS zone linked to the VNet, and a small **jumpbox VM** (the only place from which you can write the Langfuse secrets — see §3.1). It also assigns the AKS kubelet `AcrPull` on the registry, so no manual role assignment is needed later.
 
 The outputs you'll feed into Helm:
 
@@ -161,7 +173,11 @@ The outputs you'll feed into Helm:
 | `key_vault_name` | Helm `keyVault.name` |
 | `key_vault_tenant_id` | Helm `keyVault.tenantId` |
 | `amp_query_url` | Helm `env.azureMonitorWorkspaceQueryUrl` |
-| `aks_kubelet_object_id` | ACR pull role assignment |
+| `aks_kubelet_object_id` | Reference only — `AcrPull` already assigned by Terraform |
+| `acr_login_server` | `docker build`/`push` target |
+| `jumpbox_public_ip` | SSH target for writing KV secrets |
+| `jumpbox_ssh_command` | Ready-to-run SSH command (uses the generated key) |
+| `write_secrets_hint` | The `az keyvault secret set` commands to run on the jumpbox |
 
 Then connect kubectl and enable the two add-ons Terraform doesn't:
 
@@ -190,15 +206,28 @@ helm install langfuse langfuse/langfuse -n langfuse -f helm/langfuse/values.yaml
 kubectl rollout status -n langfuse deploy/langfuse-web --timeout=10m
 ```
 
-Once Langfuse is up, port-forward, create a project, copy its keys into Key Vault (the agent reads them via the CSI driver — never from code):
+Once Langfuse is up, port-forward and create a project to get its API keys. Because the Key Vault has **public access disabled**, you cannot write the secrets from WSL — you write them **from the jumpbox**, which reaches the vault through the private endpoint:
 
 ```bash
+# On WSL: get the keys from the Langfuse UI (port-forward hits the K8s API, not KV)
 kubectl port-forward -n langfuse svc/langfuse-web 3000:3000 &
-# http://localhost:3000 → Settings → API Keys → create
-KV_NAME=$(terraform -chdir=infra/terraform output -raw key_vault_name)
+# http://localhost:3000 → Settings → API Keys → create → copy pk-lf-... and sk-lf-...
+
+# SSH into the jumpbox (uses the key Terraform generated at infra/terraform/jumpbox_id_ed25519)
+eval "$(terraform -chdir=infra/terraform output -raw jumpbox_ssh_command)"
+
+# On the jumpbox: auth as the VM's managed identity, then write the secrets.
+# (cloud-init already installed the Azure CLI; the vault name resolves via private DNS)
+az login --identity
+KV_NAME=$(az keyvault list --query "[?starts_with(name,'kv-meshops')].name | [0]" -o tsv)
 az keyvault secret set --vault-name "$KV_NAME" --name langfuse-public-key --value "pk-lf-..."
 az keyvault secret set --vault-name "$KV_NAME" --name langfuse-secret-key --value "sk-lf-..."
+exit
 ```
+
+> The agent pods read these back through the Key Vault CSI driver, which resolves
+> the same private endpoint from inside `snet-aks`. If SSH is refused, your WSL
+> egress IP rotated — update `allowed_ssh_source_cidrs` in Terraform and re-apply.
 
 This is the **AgentOps observability backend wired the zero-idle way**: Langfuse self-hosts in-cluster (no third-party SaaS collector, no per-seat bill), and the agent metrics ride Azure Managed Prometheus + Managed Grafana — both on the free/included tier for this volume. There is no always-on external collector to pay for.
 
@@ -215,15 +244,13 @@ kubectl wait workspace/lab-phi-4-mini-eus2-01 -n meshops-workloads \
 ### 3.3 The image and the chart
 
 ```bash
-ACR_LOGIN_SERVER=$(az acr show -n acr-meshops --query loginServer -o tsv)
-az acr login -n acr-meshops
+ACR_LOGIN_SERVER=$(terraform -chdir=infra/terraform output -raw acr_login_server)
+az acr login -n acrmeshops
 docker build -t "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1" .
 docker push "${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1"
 
-# Let the kubelet identity pull from ACR (once):
-KUBE_OID=$(terraform -chdir=infra/terraform output -raw aks_kubelet_object_id)
-ACR_ID=$(az acr show -n acr-meshops --query id -o tsv)
-az role assignment create --assignee "$KUBE_OID" --role AcrPull --scope "$ACR_ID"
+# NOTE: the AKS kubelet already has AcrPull (assigned by Terraform), so no
+# manual `az role assignment create` is needed here.
 
 kubectl create namespace meshops
 helm install hello-inference helm/stewards -n meshops \
@@ -274,14 +301,16 @@ Where we are in the story: a portfolio lab that quietly burns money is a liabili
 The single biggest lever, shown first:
 
 ```bash
-# Run the agent on a SCHEDULE, not a hot loop. Replace the always-on Deployment
-# with a CronJob so the pod exists only for ~20 s every 15 min.
-kubectl create cronjob hello-inference \
-    --schedule="*/15 * * * *" \
-    --image="${ACR_LOGIN_SERVER}/meshops/hello-inference:0.0.1" \
-    -n meshops --dry-run=client -o yaml > k8s/cronjob.yaml
-# Apply the CronJob, then scale the Deployment to zero:
-kubectl apply -f k8s/cronjob.yaml -n meshops
+# Run the agent on a SCHEDULE, not a hot loop. The repo already ships a complete
+# CronJob at k8s/cronjob.yaml that mirrors the Deployment's identity, env, prompt
+# ConfigMap, and Key Vault CSI secret. (A bare `kubectl create cronjob --image=...`
+# would omit all of that and crash at boot.)
+#
+# 1. Edit k8s/cronjob.yaml and replace every REPLACE_ME with the SAME values you
+#    passed to `helm install` (Terraform outputs: image repo, AOAI endpoint,
+#    AKS_RESOURCE_ID, AMP query URL).
+# 2. Apply it, then scale the Deployment to zero:
+kubectl apply -f k8s/cronjob.yaml
 kubectl scale deploy/hello-inference -n meshops --replicas=0
 ```
 
@@ -341,7 +370,7 @@ az consumption budget create \
     --time-period startDate=2026-06-01 endDate=2026-12-01
 ```
 
-The idle expectation: with the GPU returned, the Deployment at zero, the CronJob paused, and reasoning on Microsoft quota, the only standing charges are the one system node and a few provisioned managed disks — and `az aks stop` removes even those between demos. A 15-minute CronJob over a month is ~2880 cycles at ~$0.038 list each (~$110/mo at list, **$0 to Ram** under the MS tenant), all bounded by the `$200` budget alert. **Idle ≈ $0.**
+The idle expectation: with the GPU returned, the Deployment at zero, the CronJob paused, and reasoning on Microsoft quota, the only standing charges are the one system node, the jumpbox (if left running), a static public IP, the private endpoint, and a few provisioned managed disks — `az aks stop` plus `az vm deallocate -g rg-meshops-sandbox -n vm-jumpbox-meshops` remove the compute charges between demos. A 15-minute CronJob over a month is ~2880 cycles at ~$0.038 list each (~$110/mo at list, **$0 to Ram** under the MS tenant), all bounded by the `$200` budget alert. **Idle ≈ $0** once the jumpbox is deallocated.
 
 **Checkpoint:** You've proven the cost line. Next, how to roll back or tear down cleanly.
 
@@ -363,7 +392,7 @@ kubectl delete -f helm/stewards/extras/workspace.yaml
 terraform -chdir=infra/terraform destroy -var "subscription_id=$(az account show --query id -o tsv)"
 ```
 
-`terraform destroy` removes the AKS cluster, Key Vault (purge-protection lift is a manual step), the Managed Prometheus workspace, Managed Grafana, ACR (if empty), and the federated identity. Soft-deleted Key Vault objects need `az keyvault purge` to fully clear (7-day default retention). For a *pause* rather than a teardown, prefer `az aks stop` — it keeps your config but stops the node-pool billing.
+`terraform destroy` removes the jumpbox (and its public IP), the private endpoint and private DNS zone, the VNet, the AKS cluster, Key Vault (purge-protection lift is a manual step), the Managed Prometheus workspace, Managed Grafana, ACR (if empty), and the federated identity. Soft-deleted Key Vault objects need `az keyvault purge` to fully clear (7-day default retention). For a *pause* rather than a teardown, prefer `az aks stop` (stops node-pool billing) and `az vm deallocate -g rg-meshops-sandbox -n vm-jumpbox-meshops` (stops jumpbox compute billing) — both keep your config.
 
 **Checkpoint:** You can take it up, roll it back, pause it, or destroy it. Reference and limitations follow.
 
@@ -374,19 +403,21 @@ terraform -chdir=infra/terraform destroy -var "subscription_id=$(az account show
 | Artefact | Manifest path | Cost at idle |
 |---|---|---|
 | AKS cluster + KAITO add-on | `infra/terraform/main.tf` | One system node (floor); GPU = $0 (scaled to zero) |
+| VNet + subnets + private DNS | `infra/terraform/network.tf` | $0 |
 | Workload Identity + federation | `infra/terraform/identity.tf` | $0 |
-| Key Vault + RBAC | `infra/terraform/keyvault.tf` | Negligible (per-operation) |
+| Private Key Vault + endpoint + RBAC | `infra/terraform/keyvault.tf` | Private endpoint (small hourly); vault ops negligible |
+| Jumpbox VM + public IP + NSG | `infra/terraform/vm.tf` | VM compute + static IP — `az vm deallocate` to zero |
 | Managed Prometheus + Grafana | `infra/terraform/monitoring.tf` | Included/free tier at this volume |
 | KAITO Workspace CR | `helm/stewards/extras/workspace.yaml` | $0 GPU when idle |
 | Langfuse | `helm/langfuse/values.yaml` | PVC disk only (demo-grade) |
 | hello-inference CronJob | `k8s/cronjob.yaml` | ~20 s every 15 min; AOAI $0 to Ram |
-| Container image | `Dockerfile` + ACR `acr-meshops` | ACR Basic storage (prune old tags) |
+| Container image | `Dockerfile` + ACR `acrmeshops` | ACR Basic storage (prune old tags) |
 
 ---
 
 ## 9. Limitations / What's Not Deployed Yet
 
-The agent runs as a CronJob (the read-only demo cadence); a durable, retrying scheduler with backoff is a P1 refinement. There is no multi-replica steward (one is enough for P0), no network policy isolating the agent from the public internet (that arrives with the Security Steward in P4), and no backup/restore for Langfuse's Postgres/Clickhouse (demo-grade in P0). Single region (`eastus2`), best-effort recovery, no formal RTO/RPO.
+The agent runs as a CronJob (the read-only demo cadence); a durable, retrying scheduler with backoff is a P1 refinement. There is no multi-replica steward (one is enough for P0), and no backup/restore for Langfuse's Postgres/Clickhouse (demo-grade in P0). The Key Vault is private (public access disabled, private endpoint only) and secrets are written from an in-VNet jumpbox; however the **jumpbox exposes SSH on a public IP** restricted by NSG to the operator's egress IP — a P1+ hardening would move this behind Azure Bastion and drop the public IP. A Kubernetes `NetworkPolicy` isolating the agent pods from the public internet still arrives with the Security Steward in P4. Single region (`eastus2`), best-effort recovery, no formal RTO/RPO.
 
 ---
 
@@ -399,6 +430,8 @@ The agent runs as a CronJob (the read-only demo cadence); a durable, retrying sc
 - [AKS — ai-toolchain-operator (KAITO) add-on](https://learn.microsoft.com/en-us/azure/aks/ai-toolchain-operator)
 - [AKS — stop and start a cluster](https://learn.microsoft.com/en-us/azure/aks/start-stop-cluster)
 - [Azure Key Vault CSI driver on AKS](https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver)
+- [Azure Key Vault — private link / private endpoint](https://learn.microsoft.com/en-us/azure/key-vault/general/private-link-service)
+- [Azure Private DNS zones for private endpoints](https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-dns)
 - [Azure Workload Identity federation on AKS](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview)
 - [Langfuse self-host (Helm)](https://langfuse.com/self-hosting/deployment/kubernetes-helm)
 - [Azure Cost Management — budgets via CLI](https://learn.microsoft.com/en-us/cli/azure/consumption/budget)

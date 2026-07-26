@@ -1,0 +1,136 @@
+variable "subscription_id" {
+  type        = string
+  description = "Azure subscription ID to deploy the MeshOps sandbox into."
+}
+
+variable "resource_group_name" {
+  type        = string
+  description = "Sandbox resource group name."
+  default     = "rg-meshops-sandbox"
+}
+
+variable "location" {
+  type        = string
+  description = "Azure region. Everything stays in one region to avoid egress cost."
+  default     = "eastus2"
+}
+
+variable "cluster_name" {
+  type        = string
+  description = "AKS cluster name."
+  default     = "aks-meshops-lab"
+}
+
+variable "system_node_vm_size" {
+  type        = string
+  description = "VM size for the single system node pool (the always-on cost floor)."
+  default     = "Standard_D2as_v5"
+}
+
+variable "acr_name" {
+  type        = string
+  description = "Azure Container Registry name (globally unique, alphanumeric only)."
+  default     = "acrmeshops"
+}
+
+variable "identity_name" {
+  type        = string
+  description = "User-assigned managed identity for the hello-inference steward."
+  default     = "msi-hello-inference"
+}
+
+variable "monitor_workspace_name" {
+  type        = string
+  description = "Azure Monitor Workspace (Managed Prometheus) name."
+  default     = "amw-meshops-lab"
+}
+
+variable "grafana_name" {
+  type        = string
+  description = "Azure Managed Grafana name."
+  default     = "amg-meshops-lab"
+}
+
+variable "steward_namespace" {
+  type        = string
+  description = "Kubernetes namespace the hello-inference steward runs in."
+  default     = "meshops"
+}
+
+variable "steward_service_account" {
+  type        = string
+  description = "Kubernetes ServiceAccount name the steward uses (federated to the MSI)."
+  default     = "hello-inference"
+}
+
+variable "tags" {
+  type        = map(string)
+  description = "Tags applied to every resource for cost attribution."
+  default = {
+    project     = "meshops"
+    iteration   = "iteration-01"
+    environment = "lab"
+    owner       = "ram"
+  }
+}
+
+# --- Private networking / jumpbox -------------------------------------------
+variable "vnet_address_space" {
+  type        = list(string)
+  description = "Address space for the lab VNet."
+  default     = ["10.20.0.0/16"]
+}
+
+variable "aks_subnet_prefix" {
+  type        = string
+  description = "Subnet for AKS nodes/pods (Azure CNI)."
+  default     = "10.20.0.0/20"
+}
+
+variable "pe_subnet_prefix" {
+  type        = string
+  description = "Subnet dedicated to private endpoints."
+  default     = "10.20.16.0/24"
+}
+
+variable "jumpbox_subnet_prefix" {
+  type        = string
+  description = "Subnet for the jumpbox VM."
+  default     = "10.20.17.0/24"
+}
+
+variable "aks_service_cidr" {
+  type        = string
+  description = "AKS service CIDR (must not overlap the VNet)."
+  default     = "10.30.0.0/16"
+}
+
+variable "aks_dns_service_ip" {
+  type        = string
+  description = "AKS kube-dns service IP (inside aks_service_cidr)."
+  default     = "10.30.0.10"
+}
+
+variable "create_jumpbox" {
+  type        = bool
+  description = "Create the Linux jumpbox VM used to reach the private Key Vault."
+  default     = true
+}
+
+variable "jumpbox_vm_size" {
+  type        = string
+  description = "Jumpbox VM size (kept small; deallocate when idle)."
+  default     = "Standard_B2s"
+}
+
+variable "jumpbox_admin_username" {
+  type        = string
+  description = "Admin username on the jumpbox."
+  default     = "azureuser"
+}
+
+variable "allowed_ssh_source_cidrs" {
+  type        = list(string)
+  description = "Source IP CIDRs allowed to SSH the jumpbox. Defaults to this WSL box's detected egress IPs."
+  default     = ["74.162.222.29/32", "74.162.222.32/32"]
+}
