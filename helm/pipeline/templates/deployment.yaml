@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    azure.workload.identity/client-id: {{ .Values.serviceAccount.clientId | quote }}
+  labels:
+    azure.workload.identity/use: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-steward-prompts
+  namespace: {{ .Values.namespace }}
+data:
+  pipeline-steward.system.md: |-
+{{ .Files.Get "prompts/pipeline-steward.system.md" | indent 4 }}
+  pipeline-steward.chat.md: |-
+{{ .Files.Get "prompts/pipeline-steward.chat.md" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-pipeline
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: hello-pipeline
+    app.kubernetes.io/component: steward
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hello-pipeline
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hello-pipeline
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: hello-pipeline
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["uv", "run", "--no-sync", "python", "-m", "stewards.pipeline"]
+          ports:
+            - name: metrics
+              containerPort: 9464
+{{- if .Values.chat.enabled }}
+            - name: http
+              containerPort: {{ .Values.chat.port }}
+{{- end }}
+          env:
+            - name: AZURE_OPENAI_ENDPOINT
+              value: {{ .Values.env.azureOpenAiEndpoint | quote }}
+            - name: AZURE_OPENAI_CHAT_DEPLOYMENT_NAME
+              value: {{ .Values.env.azureOpenAiChatDeploymentName | quote }}
+            - name: LANGFUSE_HOST
+              value: {{ .Values.env.langfuseHost | quote }}
+            - name: MLFLOW_TRACKING_URI
+              value: {{ .Values.env.mlflowTrackingUri | quote }}
+            - name: REGISTERED_MODEL_NAME
+              value: {{ .Values.env.registeredModelName | quote }}
+            # Loop mode: >0 keeps this Deployment pod Running, re-running a cycle
+            # on this interval. Leave at 0 for the one-shot pattern.
+            - name: RUN_INTERVAL_SECONDS
+              value: {{ .Values.runIntervalSeconds | default 0 | quote }}
+{{- if .Values.chat.enabled }}
+            # Interactive chat server: serve the steward's persona over HTTP
+            # instead of running observe cycles. Keeps the pod long-lived.
+            - name: CHAT_ENABLED
+              value: "true"
+            - name: CHAT_PORT
+              value: {{ .Values.chat.port | quote }}
+{{- end }}
+            # uv needs a writable cache dir; root FS is read-only, so point it
+            # at the tmp emptyDir volume mounted below.
+            - name: UV_CACHE_DIR
+              value: /tmp/uv-cache
+            # Secrets from Key Vault CSI:
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hello-pipeline-secrets
+                  key: LANGFUSE_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hello-pipeline-secrets
+                  key: LANGFUSE_SECRET_KEY
+          volumeMounts:
+            - name: prompts
+              mountPath: /etc/prompts
+              readOnly: true
+            - name: secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+{{- if .Values.chat.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+{{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: prompts
+          configMap:
+            name: pipeline-steward-prompts
+        - name: tmp
+          emptyDir: {}
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: hello-pipeline-kv

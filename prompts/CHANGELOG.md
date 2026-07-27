@@ -1,5 +1,13 @@
 # Prompt CHANGELOG
 
+## 1.2.0
+- Added `pipeline-steward.system.md` and `pipeline-steward.chat.md` for the
+  iteration-02 **Pipeline Steward** (`hello-pipeline`). Read-only MLOps persona
+  that observes an MLflow Model Registry and reasons about promotion-readiness
+  (`None → Staging → Production → Archived`). Same three no-write guarantees and
+  non-negotiable identity anchoring as the Inference Steward; `requires_hitl`
+  forced false.
+
 ## 1.1.0
 - `inference-steward.chat.md`: strengthened identity anchoring for the small
   chat model (phi-4-mini). Added a non-negotiable **Identity** section so the

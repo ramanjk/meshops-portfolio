@@ -1,0 +1,6 @@
+apiVersion: v2
+name: meshops-pipeline
+description: MeshOps Pipeline Steward — iteration-02 ships the hello-pipeline steward (read-only MLflow registry observer).
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
