@@ -1,36 +1,71 @@
 {{/*
-The steward's aks-mcp child process runs `kubectl get` against the cluster using
-this pod's in-cluster service-account token. Grant it read-only access to the
-KAITO Workspace CR (and nodes, for GPU node inspection). Cluster-scoped because
-the Workspace lives in another namespace (meshops-workloads) and nodes are
-cluster-scoped.
+The steward's aks-mcp child process runs `kubectl get`/`describe` against the
+cluster using this pod's in-cluster service-account token. The persona is a
+read-only observability steward, so grant broad *read-only* access:
+
+  1. A binding to the built-in `view` ClusterRole — read (get/list/watch) on
+     virtually all namespaced resources across every namespace (pods, services,
+     deployments, configmaps, namespaces, events, …). `view` deliberately
+     EXCLUDES secrets, which also enforces the persona's "never reveal secrets"
+     guardrail at the RBAC layer.
+  2. A small custom ClusterRole for what `view` cannot cover: cluster-scoped
+     nodes, the KAITO Workspace CRD (custom API group), CRD discovery, and the
+     metrics API (node/pod usage).
+
+No write verbs are granted anywhere, matching the read-only iteration.
 */}}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: {{ .Values.serviceAccount.name }}-workspace-reader
-  labels:
-    app.kubernetes.io/name: hello-inference
-    app.kubernetes.io/component: steward
-rules:
-  - apiGroups: ["kaito.sh"]
-    resources: ["workspaces"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["nodes", "pods"]
-    verbs: ["get", "list", "watch"]
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ .Values.serviceAccount.name }}-workspace-reader
+  name: {{ .Values.serviceAccount.name }}-view
   labels:
     app.kubernetes.io/name: hello-inference
     app.kubernetes.io/component: steward
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ .Values.serviceAccount.name }}-workspace-reader
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.serviceAccount.name }}-cluster-reader
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+rules:
+  # KAITO Workspace CRD (not covered by the built-in view role).
+  - apiGroups: ["kaito.sh"]
+    resources: ["workspaces"]
+    verbs: ["get", "list", "watch"]
+  # Cluster-scoped nodes (view is namespaced-only) for GPU node inspection.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # CRD discovery so `kubectl get workspace` / api-resources resolve cleanly.
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  # Live resource usage (node/pod metrics) from the metrics API.
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}-cluster-reader
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.serviceAccount.name }}-cluster-reader
 subjects:
   - kind: ServiceAccount
     name: {{ .Values.serviceAccount.name }}
