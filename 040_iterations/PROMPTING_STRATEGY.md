@@ -14,6 +14,59 @@ order*, and *how to verify it*. Same skill as leading a strong engineer.
 
 ---
 
+## 0. Where the idea came from (before any prompt)
+
+The concept was **mine, from real pain — not from a prompt.** The project
+proposal (`020_project_proposal/proposal.md`) opens with a "2 a.m. story": an
+on-call engineer paged while a production LLM platform on AKS misbehaves —
+latency doubling, a fine-tune queued for promotion, a RAG corpus just refreshed,
+the GPU nodepool near saturation. **Four problems, four specialties
+(LLMOps / MLOps / AIOps / SecOps), one tired human.**
+
+The insight that turned that pain into MeshOps was the **service-mesh move**:
+just as service mesh lifted retries/routing/security out of every microservice
+into a shared plane, MeshOps lifts each *operational* concern into its own small
+AI **steward** — with one safety line: **autonomy lives at the *proposal* layer,
+never at *actuation*** (a human always approves).
+
+It was also **career-driven**: 11 years of AKS depth + Kubestronaut meant the
+cluster wasn't the new skill — the *agentic AI + LLMOps craft on top* was. The
+six stewards were deliberately chosen so four lean on what I already know and two
+(Quality, Security) stretch me into new territory.
+
+**Was a prompt used for the ideation?** The concept was mine; the AI helped
+*shape and pressure-test* it into a structured proposal. This is the kind of
+framing prompt that reflects that conversation:
+
+```
+I'm a senior Kubernetes/AKS engineer (11 yrs, Kubestronaut) trying to move into
+an AI Platform / MLOps / LLMOps role. I want a portfolio project that:
+- shows off what I already know cold (AKS, GPU nodepools, GitOps, Prometheus)
+- forces me to learn the NEW stuff a hiring panel screens for (agents, MCP,
+  LLMOps eval, LLM security)
+- is genuinely agentic (a plan->act->observe loop with real tools), not a chatbot
+- is safe enough to be real (nothing touches prod without a human approval).
+
+Help me pressure-test this idea: operating an LLM platform on AKS is really four
+jobs braided together (LLMOps, MLOps, AIOps, SecOps). What if I apply the
+service-mesh pattern to OPERATIONS — a mesh of small specialist "steward" agents,
+one per concern, each proposing fixes behind a human-in-the-loop gate?
+
+Challenge the concept, name the right set of stewards, map each to a skill I
+have vs. a skill I need to build, and tell me what would make it credible to a
+Microsoft AI Platform hiring panel.
+```
+
+**Talking track ("did the AI come up with the idea?"):**
+
+> No — the idea came from the operational pain I live every week. I used the AI to
+> *sharpen* it: naming the right six stewards, applying the service-mesh analogy
+> cleanly, and pressure-testing the safety model. The concept and the career
+> strategy were mine; the AI was a thinking partner that helped me structure it
+> into a proposal and then build it.
+
+---
+
 ## 1. The master kickoff prompt (the "constitution")
 
 The big context-setting prompt, given once up front:
