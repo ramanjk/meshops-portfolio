@@ -1,7 +1,11 @@
 {{- if .Values.chat.enabled }}
-# ClusterIP service fronting the steward's interactive chat API. Reach it with:
-#   kubectl port-forward -n {{ .Values.namespace }} svc/hello-inference-chat {{ .Values.chat.port }}:{{ .Values.chat.port }}
-# then open http://localhost:{{ .Values.chat.port }}/
+{{- $svc := .Values.chat.service | default dict }}
+{{- $type := $svc.type | default "ClusterIP" }}
+# Service fronting the steward's interactive chat API.
+#   type=LoadBalancer -> open http://<EXTERNAL-IP>:{{ .Values.chat.port }}/ once assigned:
+#     kubectl get svc -n {{ .Values.namespace }} hello-inference-chat -w
+#   type=ClusterIP    -> port-forward:
+#     kubectl port-forward -n {{ .Values.namespace }} svc/hello-inference-chat {{ .Values.chat.port }}:{{ .Values.chat.port }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -10,8 +14,16 @@ metadata:
   labels:
     app.kubernetes.io/name: hello-inference
     app.kubernetes.io/component: steward-chat
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  type: ClusterIP
+  type: {{ $type }}
+  {{- if and (eq $type "LoadBalancer") $svc.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $svc.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
   selector:
     app.kubernetes.io/name: hello-inference
   ports:

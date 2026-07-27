@@ -18,6 +18,26 @@ runIntervalSeconds: 0
 chat:
   enabled: true
   port: 8080
+  service:
+    # ClusterIP (port-forward only) or LoadBalancer (Azure public LB, reachable
+    # from your browser/WSL without port-forward).
+    type: LoadBalancer
+    annotations: {}
+    # SECURITY: the chat endpoint has no auth. When type=LoadBalancer, restrict
+    # who can reach the public IP by listing CIDRs here (e.g. your egress IPs).
+    # Empty list = open to the internet.
+    loadBalancerSourceRanges: []
+  # Optional Ingress (set enabled=true and provide an ingress controller + host).
+  # When used, prefer chat.service.type=ClusterIP and route through the Ingress.
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    # Optional TLS: set secretName to a pre-created cert Secret.
+    tls:
+      enabled: false
+      secretName: ""
 
 serviceAccount:
   name: hello-inference

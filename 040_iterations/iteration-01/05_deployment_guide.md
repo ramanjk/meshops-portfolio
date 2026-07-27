@@ -326,6 +326,43 @@ kubectl rollout status -n meshops deploy/hello-inference --timeout=5m
 > `helm upgrade hello-inference helm/stewards -n meshops --reuse-values` and
 > `kubectl rollout restart deploy/hello-inference -n meshops`.
 
+### 3.4 Exposing the chat UI
+
+By default the chat Service is a **`LoadBalancer`** (`chat.service.type`), so you
+get a public IP instead of needing `kubectl port-forward`:
+
+```bash
+kubectl get svc -n meshops hello-inference-chat -w   # wait for EXTERNAL-IP
+LB_IP=$(kubectl get svc -n meshops hello-inference-chat -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+echo "Chat UI: http://${LB_IP}:8080/"
+```
+
+> **One-time NSG rule (BYO-subnet gotcha).** Because AKS runs in our own
+> `snet-aks`, that subnet has an AKS-auto-created NSG
+> (`vnet-meshops-lab-snet-aks-nsg-<region>`, *not* Terraform-managed). The Azure
+> cloud-controller adds the LB allow rule to the **node** NSG
+> (`aks-agentpool-*-nsg`), but the **subnet** NSG's default `DenyAllInbound` still
+> blocks it — so the public IP times out until you open the port there:
+>
+> ```bash
+> az network nsg rule create -g rg-meshops-sandbox \
+>   --nsg-name vnet-meshops-lab-snet-aks-nsg-southcentralus \
+>   --name allow-chat-lb-inbound --priority 500 \
+>   --direction Inbound --access Allow --protocol Tcp \
+>   --source-address-prefixes Internet --source-port-ranges '*' \
+>   --destination-address-prefixes "${LB_IP}" --destination-port-ranges 8080
+> ```
+>
+> ⚠️ The chat endpoint has **no authentication**. Scope it by setting
+> `chat.service.loadBalancerSourceRanges` (list of CIDRs) and narrowing the
+> `--source-address-prefixes` above to your egress IPs, or keep it `ClusterIP`
+> (`--set chat.service.type=ClusterIP`) and port-forward.
+
+**Ingress (optional).** If the cluster has an ingress controller (e.g. the AKS
+app-routing add-on), set `chat.ingress.enabled=true`, `chat.ingress.className`,
+and `chat.ingress.host`, and switch the Service back to `ClusterIP`. The chart
+renders an `Ingress` routing `/` to the chat Service on port 8080.
+
 ---
 
 ## 4. The Smoke Test
