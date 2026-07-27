@@ -36,17 +36,30 @@ PROMPT_PATH_LOCAL = Path(__file__).parent.parent.parent.parent / "prompts" / "in
 
 
 def _read_system_prompt() -> str:
-    """Read the system prompt from /etc/prompts in-cluster or the repo path locally."""
+    """Read the system prompt from /etc/prompts in-cluster or the repo path locally.
+
+    An in-cluster file that exists but is empty (e.g. a ConfigMap key that
+    rendered blank) is ignored so it can never silently shadow the real prompt.
+    """
     if PROMPT_PATH_DEFAULT.exists():
-        return PROMPT_PATH_DEFAULT.read_text(encoding="utf-8")
+        text = PROMPT_PATH_DEFAULT.read_text(encoding="utf-8")
+        if text.strip():
+            return text
     return PROMPT_PATH_LOCAL.read_text(encoding="utf-8")
 
 
 def _read_prompt(filename: str) -> str:
-    """Read a prompt file from /etc/prompts in-cluster or ./prompts locally."""
+    """Read a prompt file from /etc/prompts in-cluster or ./prompts locally.
+
+    An in-cluster file that exists but is empty is treated as absent and falls
+    back to the image-baked prompt, so a blank ConfigMap key cannot wipe the
+    persona.
+    """
     in_cluster = Path("/etc/prompts") / filename
     if in_cluster.exists():
-        return in_cluster.read_text(encoding="utf-8")
+        text = in_cluster.read_text(encoding="utf-8")
+        if text.strip():
+            return text
     local = PROMPT_PATH_LOCAL.parent / filename
     return local.read_text(encoding="utf-8")
 

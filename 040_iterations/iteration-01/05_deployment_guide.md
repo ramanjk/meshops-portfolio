@@ -314,6 +314,18 @@ kubectl rollout status -n meshops deploy/hello-inference --timeout=5m
 
 **Checkpoint:** Everything is deployed. Next, smoke-test and read the trace.
 
+> **Persona prompts (how they reach the pod).** The chart ships the persona
+> files into the pod via the `inference-steward-prompts` ConfigMap, rendered with
+> `.Files.Get "prompts/..."`. Helm's `.Files.Get` can only read files **inside**
+> the chart directory, so the repo-root `prompts/` is exposed to the chart through
+> the committed symlink `helm/stewards/prompts -> ../../prompts`. Keep that symlink
+> intact — without it the ConfigMap renders empty and the steward loses its
+> persona (it answers as a generic assistant). As a safety net, `_read_prompt`
+> ignores an empty `/etc/prompts` file and falls back to the image-baked prompt.
+> To ship a persona edit **without rebuilding the image**, just
+> `helm upgrade hello-inference helm/stewards -n meshops --reuse-values` and
+> `kubectl rollout restart deploy/hello-inference -n meshops`.
+
 ---
 
 ## 4. The Smoke Test
