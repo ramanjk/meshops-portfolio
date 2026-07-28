@@ -18,6 +18,10 @@ data:
 {{ .Files.Get "prompts/inference-steward.system.md" | indent 4 }}
   inference-steward.chat.md: |-
 {{ .Files.Get "prompts/inference-steward.chat.md" | indent 4 }}
+{{- if .Values.writeEnabled }}
+  inference-steward.gated-write.chat.md: |-
+{{ .Files.Get "prompts/inference-steward.gated-write.chat.md" | indent 4 }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -81,6 +85,15 @@ spec:
               value: "true"
             - name: CHAT_PORT
               value: {{ .Values.chat.port | quote }}
+{{- end }}
+{{- if .Values.writeEnabled }}
+            # Iteration 2: arm the gated-write HITL path. The steward gains the
+            # non-mutating propose_write tool and the write-capable persona; all
+            # actuation still passes the human gate and the bounded RBAC Role.
+            - name: WRITE_ENABLED
+              value: "true"
+            - name: WRITE_NAMESPACE
+              value: {{ .Values.writeNamespace | quote }}
 {{- end }}
             # uv needs a writable cache dir; root FS is read-only, so point it
             # at the tmp emptyDir volume mounted below.

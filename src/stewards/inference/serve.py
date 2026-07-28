@@ -27,6 +27,8 @@ from pydantic import BaseModel
 
 from . import agent as agent_module
 from .settings import Settings
+from .write_gate import KubectlApplier, WriteGate
+from .write_tool import build_propose_write_tool, current_session_id
 
 LOG = logging.getLogger("meshops.hello-inference.chat")
 
@@ -40,6 +42,15 @@ class ChatReply(BaseModel):
     reply: str
     session_id: str
     trace_id: str | None = None
+    # When the steward proposes a write this turn, the pending proposal(s) are
+    # surfaced here so the UI can render Approve/Reject controls. Empty/None in
+    # the read-only path.
+    pending: list[dict] | None = None
+
+
+class DecisionRequest(BaseModel):
+    proposal_id: str
+    session_id: str | None = None
 
 
 _INDEX_HTML = """<!doctype html>
@@ -64,7 +75,7 @@ _INDEX_HTML = """<!doctype html>
 </style>
 </head>
 <body>
-  <h1>🛠️ Inference Steward — chat <small>(read-only)</small></h1>
+  <h1>🛠️ Inference Steward — chat</h1>
   <div id="log"></div>
   <form id="f">
     <input id="m" autocomplete="off" placeholder="Ask about the KAITO workspace, replicas, GPU…" autofocus/>
@@ -83,6 +94,35 @@ _INDEX_HTML = """<!doctype html>
     d.appendChild(document.createTextNode(text));
     log.appendChild(d); log.scrollTop = log.scrollHeight;
   }
+  async function decide(url, id, card) {
+    card.querySelectorAll('button').forEach(b => b.disabled = true);
+    try {
+      const r = await fetch(url, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({proposal_id: id, session_id: sessionId})
+      });
+      const j = await r.json();
+      add('Gate', j.reply ?? JSON.stringify(j));
+    } catch (err) { add('Gate', '(decision failed) ' + err); }
+  }
+  function addProposal(p) {
+    const d = document.createElement('div');
+    d.className = 'msg bot';
+    d.innerHTML = '<div class="role">Proposal ' + p.id + ' — awaiting your approval</div>';
+    const intent = document.createElement('div'); intent.textContent = p.summary;
+    const pre = document.createElement('pre');
+    pre.style.cssText = 'white-space:pre-wrap;font-size:.8rem;opacity:.85;margin:.4rem 0;';
+    pre.textContent = p.preview || '(no preview)';
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:.5rem;';
+    const ok = document.createElement('button'); ok.textContent = 'Approve';
+    const no = document.createElement('button'); no.textContent = 'Reject';
+    no.style.background = '#dc2626';
+    ok.onclick = () => decide('/approve', p.id, d);
+    no.onclick = () => decide('/reject', p.id, d);
+    row.appendChild(ok); row.appendChild(no);
+    d.appendChild(intent); d.appendChild(pre); d.appendChild(row);
+    log.appendChild(d); log.scrollTop = log.scrollHeight;
+  }
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = input.value.trim(); if (!msg) return;
@@ -95,6 +135,7 @@ _INDEX_HTML = """<!doctype html>
       const j = await r.json();
       if (j.session_id) sessionId = j.session_id;
       add('Steward', j.reply ?? ('(error) ' + JSON.stringify(j)));
+      if (Array.isArray(j.pending)) j.pending.forEach(addProposal);
     } catch (err) { add('Steward', '(request failed) ' + err); }
     finally { btn.disabled = false; input.focus(); }
   });
@@ -143,12 +184,30 @@ def _build_app(settings: Settings) -> FastAPI:
         await stack.enter_async_context(aks_tool)
         await stack.enter_async_context(prom_tool)
         chat = agent_module._build_chat_client(settings)
-        system_prompt = agent_module._read_prompt("inference-steward.chat.md")
+
+        tools: list[Any] = [aks_tool, prom_tool]
+        # Iteration 2: gated write. Only when write is deliberately enabled do we
+        # load the write-capable persona and hand the agent the single, NON-
+        # mutating propose_write tool. Off = byte-for-byte the read-only steward.
+        if settings.write_enabled:
+            gate = WriteGate(
+                KubectlApplier(kubectl_binary=settings.kubectl_binary),
+                allowed_namespace=settings.write_namespace,
+                ttl_seconds=settings.write_proposal_ttl_seconds,
+            )
+            state["gate"] = gate
+            tools.append(build_propose_write_tool(gate, settings.write_namespace))
+            persona = agent_module._read_prompt("inference-steward.gated-write.chat.md")
+            LOG.info("[chat] WRITE-ENABLED: HITL gate armed for ns/%s", settings.write_namespace)
+        else:
+            state["gate"] = None
+            persona = agent_module._read_prompt("inference-steward.chat.md")
+
         agent = chat.as_agent(
             name="hello-inference-chat",
             id="hello-inference-chat",
-            instructions=system_prompt,
-            tools=[aks_tool, prom_tool],
+            instructions=persona,
+            tools=tools,
         )
         state["stack"] = stack
         state["agent"] = agent
@@ -179,6 +238,8 @@ def _build_app(settings: Settings) -> FastAPI:
             session = agent.create_session(session_id=session_id)
             sessions[session_id] = session
 
+        gate: WriteGate | None = state.get("gate")
+        token = current_session_id.set(session_id)
         tracer = agent_module.get_tracer()
         trace_hex: str | None = None
         with tracer.start_as_current_span(
@@ -192,9 +253,52 @@ def _build_app(settings: Settings) -> FastAPI:
                 LOG.exception("[chat] turn failed")
                 span.record_exception(exc)
                 reply = _friendly_error(exc) or f"Sorry — I hit an error handling that: {exc}"
-        return ChatReply(reply=reply.strip(), session_id=session_id, trace_id=trace_hex)
+            finally:
+                current_session_id.reset(token)
+
+        pending = None
+        if gate is not None:
+            pending = [
+                {"id": p.id, "summary": p.human_summary(), "preview": p.preview}
+                for p in gate.pending_for_session(session_id)
+            ] or None
+        return ChatReply(
+            reply=reply.strip(), session_id=session_id, trace_id=trace_hex, pending=pending
+        )
+
+    @app.post("/approve")
+    async def approve_endpoint(req: DecisionRequest) -> dict[str, str]:
+        return _decide(state, req, approve=True)
+
+    @app.post("/reject")
+    async def reject_endpoint(req: DecisionRequest) -> dict[str, str]:
+        return _decide(state, req, approve=False)
 
     return app
+
+
+def _decide(state: dict[str, Any], req: DecisionRequest, *, approve: bool) -> dict[str, str]:
+    """Resolve a pending proposal at the HITL gate (the human's decision)."""
+    gate: WriteGate | None = state.get("gate")
+    if gate is None:
+        return {"status": "error", "reply": "This steward is read-only; there is nothing to approve."}
+    approver = "operator (chat)"
+    try:
+        proposal = gate.approve(req.proposal_id, approver) if approve else gate.reject(
+            req.proposal_id, approver
+        )
+    except (KeyError, ValueError) as exc:
+        return {"status": "error", "reply": str(exc)}
+
+    if proposal.status.value == "executed":
+        reply = f"✅ Approved and executed {proposal.id}: {proposal.human_summary()} → {proposal.outcome}"
+    elif proposal.status.value == "rejected":
+        reply = f"🚫 Rejected {proposal.id}: no change was made."
+    elif proposal.status.value == "denied":
+        reply = f"⛔ Denied by RBAC/scope for {proposal.id}: {proposal.outcome} (no change made)."
+    else:
+        reply = f"⚠️ {proposal.id} {proposal.status.value}: {proposal.outcome}"
+    return {"status": proposal.status.value, "reply": reply, "proposal_id": proposal.id}
 
 
 def serve(settings: Settings) -> None:

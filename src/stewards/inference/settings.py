@@ -80,3 +80,34 @@ class Settings(BaseSettings):
         False, description="Serve the interactive chat API instead of running cycles."
     )
     chat_port: int = Field(8080, description="Port for the chat HTTP server.")
+
+    # ---- Iteration 2: gated write (HITL) -------------------------------------
+    # Master capability flag for the write scope. OFF by default, which makes
+    # the steward byte-for-byte its Iteration-1 read-only self: no propose_write
+    # tool is wired and the read-only persona is loaded. Turning it ON only makes
+    # the HITL gate *reachable* — it never removes the gate (ADR-0011).
+    write_enabled: bool = Field(
+        False,
+        description="Enable the gated-write path (propose -> HITL approve -> act). Off = read-only.",
+    )
+    # The single namespace the executor is allowed to mutate. Any proposal
+    # targeting another namespace is refused before it is even recorded — the
+    # application-level twin of the write-but-bounded RBAC Role.
+    write_namespace: str = Field(
+        "meshops-workloads",
+        description="Only namespace the executor may mutate. Backstopped by a namespaced RBAC Role.",
+    )
+    # Pending proposals expire after this many seconds (single-use, TTL-bounded),
+    # so an unapproved proposal cannot linger and be approved much later.
+    write_proposal_ttl_seconds: int = Field(
+        900,
+        ge=30,
+        description="Seconds a pending write proposal stays approvable before it expires.",
+    )
+    # kubectl binary the deterministic executor shells out to for dry-run preview
+    # and apply. This is the same actuation aks-mcp performs; it runs under the
+    # steward's bounded ServiceAccount token, so RBAC is the hard backstop.
+    kubectl_binary: str = Field(
+        "kubectl",
+        description="Path to kubectl used by the deterministic write executor.",
+    )

@@ -1,0 +1,67 @@
+{{- if .Values.writeEnabled }}
+{{/*
+Iteration 2 (ADR-0011) — the write-but-bounded RBAC backstop.
+
+This is the HARD floor under the HITL gate. Even after a human approves, the
+deterministic executor runs `kubectl` using this ServiceAccount's token, so an
+approved-but-wrong (or prompt-injected) request is physically capped by what
+this Role grants.
+
+Deliberately bounded:
+  * It is a NAMESPACED Role in writeNamespace — it therefore CANNOT touch
+    cluster-scoped resources (nodes, namespaces, CRDs, ClusterRoles, …) at all.
+  * It grants mutating verbs only on the workload resources the steward operates
+    (pods, deployments/statefulsets + their scale subresource, and KAITO
+    Workspaces).
+  * It NEVER lists secrets or rbac.authorization.k8s.io objects — so the steward
+    can neither read nor mutate credentials or escalate its own privileges.
+
+The read path is untouched: the broad read-only `view` ClusterRoleBinding in
+rbac.yaml still applies. This Role only ADDS a narrow, namespaced write surface.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.serviceAccount.name }}-writer
+  namespace: {{ .Values.writeNamespace }}
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+    meshops.io/iteration: "2-gated-write"
+rules:
+  # Diagnostic / general workload objects the steward may create, patch, delete.
+  - apiGroups: [""]
+    resources: ["pods", "configmaps"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  # Scaling standard workloads (the scale subresource backs `kubectl scale`).
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale", "statefulsets/scale"]
+    verbs: ["get", "patch", "update"]
+  # KAITO Workspaces (patch spec.resource.count to scale inference capacity).
+  - apiGroups: ["kaito.sh"]
+    resources: ["workspaces"]
+    verbs: ["get", "list", "patch", "update"]
+  # NOTE: secrets, rbac.authorization.k8s.io, and ALL cluster-scoped resources
+  # are intentionally absent. A namespaced Role cannot grant the latter anyway.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}-writer
+  namespace: {{ .Values.writeNamespace }}
+  labels:
+    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/component: steward
+    meshops.io/iteration: "2-gated-write"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}-writer
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace }}
+{{- end }}

@@ -44,6 +44,17 @@ serviceAccount:
   # Workload Identity client ID — filled by Terraform output
   clientId: ""
 
+# ---- Iteration 2: gated write (HITL) ----------------------------------------
+# Master switch for the write scope. When false (default) the steward is exactly
+# its read-only self: no propose_write tool, read-only persona, and NO write
+# RBAC is created. When true, the deployment gets WRITE_ENABLED + the gated-write
+# persona, and a *namespaced, write-but-bounded* Role/RoleBinding is created in
+# writeNamespace (see templates/write-rbac.yaml). The gate + human approval are
+# always required regardless (ADR-0011).
+writeEnabled: false
+# The single namespace the steward's executor may mutate.
+writeNamespace: meshops-workloads
+
 keyVault:
   name: ""                # ${KV_NAME}, filled at helm install time
   tenantId: ""

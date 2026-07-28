@@ -1,5 +1,13 @@
 # Prompt CHANGELOG
 
+## 1.4.0
+- Added `inference-steward.gated-write.chat.md` — the **Iteration 2 (gated
+  write + HITL)** persona for the Inference Steward. Reads stay ungated; the
+  steward may now **propose** any mutation via the `propose_write` tool but
+  never executes it — every write waits for a human's approval at the gate
+  (ADR-0011: *no autonomous actuation*). Loaded only when `write_enabled=true`;
+  otherwise the read-only `inference-steward.chat.md` persona is used unchanged.
+
 ## 1.3.0
 - Added `quality-steward.system.md` and `quality-steward.chat.md` for the
   **Quality Steward** (`hello-quality`). Read-only (Iteration 1) LLMOps-quality
