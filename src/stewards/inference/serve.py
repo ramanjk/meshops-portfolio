@@ -104,6 +104,32 @@ _INDEX_HTML = """<!doctype html>
 """
 
 
+def _friendly_error(exc: Exception) -> str | None:
+    """Render a calm, on-persona message for known-benign LLM backend failures.
+
+    Azure OpenAI's content-safety filter (and the agent framework's handling of
+    it) surfaces as an opaque exception — e.g. ``'ContentFiltered' is not a valid
+    ContentFilterCodes`` — rather than a clean refusal, which would otherwise leak
+    a raw stack string to the chat user. We detect that (and transient rate
+    limits) and reply gracefully. The unsafe or failed action never executed
+    regardless: this steward is read-only. Returns None for unrecognised errors so
+    the caller falls back to the generic message.
+    """
+    text = str(exc).lower()
+    if "contentfilter" in text or "content_filter" in text or "responsible ai" in text:
+        return (
+            "I can't help with that request — it was flagged by the platform's "
+            "content-safety filter, so I won't act on it. I'm a read-only steward "
+            "regardless. Ask me about what I observe and I'll gladly help."
+        )
+    if "rate limit" in text or "too_many_requests" in text or "429" in text:
+        return (
+            "I'm being rate-limited by the language model right now — please retry "
+            "in a few seconds."
+        )
+    return None
+
+
 def _build_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Inference Steward Chat")
     state: dict[str, Any] = {}
@@ -165,7 +191,7 @@ def _build_app(settings: Settings) -> FastAPI:
             except Exception as exc:  # noqa: BLE001 - report errors to the caller
                 LOG.exception("[chat] turn failed")
                 span.record_exception(exc)
-                reply = f"Sorry — I hit an error handling that: {exc}"
+                reply = _friendly_error(exc) or f"Sorry — I hit an error handling that: {exc}"
         return ChatReply(reply=reply.strip(), session_id=session_id, trace_id=trace_hex)
 
     return app
