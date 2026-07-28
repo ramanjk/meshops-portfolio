@@ -1,6 +1,6 @@
-# Iteration-02 — Deployment Guide: Shipping the Pipeline Steward
+# Iteration 1 (Read-Only) — Deployment Guide: Shipping the Pipeline Steward
 
-*Audience: Ram, standing up `hello-pipeline` on the lab AKS cluster. Assumes the iteration-01 substrate (AKS, ACR, Key Vault, Azure OpenAI, Langfuse, the `msi-hello-inference` managed identity) is already standing.*
+*Audience: Ram, standing up `hello-pipeline` on the lab AKS cluster. Assumes the Inference steward's substrate (AKS, ACR, Key Vault, Azure OpenAI, Langfuse, the `msi-hello-inference` managed identity) is already standing.*
 
 Five moves: stand up the registry, seed it, build the image, wire Workload Identity, deploy. Then verify and (when you're done) tear down the billable bits.
 

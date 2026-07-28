@@ -1,4 +1,4 @@
-# Iteration-02 — Implementation Guide: Building the Pipeline Steward
+# Iteration 1 (Read-Only) — Implementation Guide: Building the Pipeline Steward
 
 *Audience: Ram. You already built the Inference Steward, so this guide leans on that: it calls out only what's **different** and reuses everything that's the same. Read `01_use_case.md` first for the "what/why"; this is the "how it's built."*
 
@@ -9,7 +9,7 @@ The Pipeline Steward is the Inference Steward's twin skeleton with three organs 
 ```mermaid
 mindmap
   root((Build hello-pipeline))
-    Reused from iter-01
+    Reused from the Inference build
       MAF agent loop
       Azure OpenAI gpt-4.1
       Langfuse + OTel + Prom
@@ -62,14 +62,14 @@ Two prompts mirroring the Inference personas:
 
 Both forbid registry writes and instruct the steward to decline promotion requests — no-write guarantee #2.
 
-Prompts reach the pod via a ConfigMap built with `.Files.Get`, which only reads inside the chart dir — hence the committed symlink `helm/pipeline/prompts → ../../prompts` (git mode `120000`), the same trick as iter-01.
+Prompts reach the pod via a ConfigMap built with `.Files.Get`, which only reads inside the chart dir — hence the committed symlink `helm/pipeline/prompts → ../../prompts` (git mode `120000`), the same trick as the Inference build.
 
 ---
 
 ## 4. Packaging (shared image, dedicated chart)
 
 - **Dockerfile / pyproject** are shared. The image bakes **all** stewards (`src/stewards`, `src/mcp_servers`); `pyproject` adds `hello-pipeline` and `mlflow-mcp` console scripts. The Helm `command:` picks `python -m stewards.pipeline`.
-- **`helm/pipeline/`** is a **dedicated chart**, deliberately isolated from the steward-1 chart so it can't regress it. Templates mirror iter-01 (`deployment`, `service`, `ingress`, `secretproviderclass`, `podmonitor`) with two key differences:
+- **`helm/pipeline/`** is a **dedicated chart**, deliberately isolated from the steward-1 chart so it can't regress it. Templates mirror the Inference build (`deployment`, `service`, `ingress`, `secretproviderclass`, `podmonitor`) with two key differences:
   - **No `rbac.yaml`.** The Pipeline steward reads MLflow over HTTP, not the Kubernetes API, so it needs **zero** cluster RBAC. Its ServiceAccount exists only to carry Workload Identity (AOAI + Key Vault).
   - **env** carries `MLFLOW_TRACKING_URI` + `REGISTERED_MODEL_NAME` instead of the AKS/Prom vars.
 

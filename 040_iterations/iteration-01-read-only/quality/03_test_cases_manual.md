@@ -1,16 +1,16 @@
-# Iteration-03 — Manual Test Cases: Testing the Quality Steward by Prompt
+# Iteration 1 (Read-Only) — Manual Test Cases: Testing the Quality Steward by Prompt
 
 *Audience: Ram, sitting at a terminal with the live chat endpoint open. This is the hands-on playbook — paste a prompt, read the reply, and check it against "what a good answer looks like." Every case teaches you one thing about what this steward can and cannot do, and a few cases put it beside the Inference and Pipeline Stewards so the three-way mesh clicks.*
 
-> **⚠️ Deploy first.** Unlike iterations 01 and 02, the Quality Steward is **built and tested locally but not yet deployed** (the lab environment is cost-stopped). Run `05_deployment_guide.md` first — that brings up the pod and assigns the chat LoadBalancer IP. Then fill the IP into the table below and work through the prompts. Until then, treat this as the *acceptance script* you'll run at first deploy.
+> **⚠️ Deploy first.** Unlike the Inference and Pipeline stewards, the Quality Steward is **built and tested locally but not yet deployed** (the lab environment is cost-stopped). Run `05_deployment_guide.md` first — that brings up the pod and assigns the chat LoadBalancer IP. Then fill the IP into the table below and work through the prompts. Until then, treat this as the *acceptance script* you'll run at first deploy.
 
 ## The three endpoints you'll talk to (once deployed)
 
 | Steward | Chat URL | Watches |
 |---|---|---|
 | **Quality** (this iteration) | `http://<QUALITY_LB_IP>:8080/` *(TBD — assign at deploy)* | Langfuse project (traces + eval scores) |
-| **Pipeline** (iteration-02) | `http://<PIPELINE_LB_IP>:8080/` *(new IP on re-deploy)* | MLflow Model Registry (versions, stages) |
-| **Inference** (iteration-01) | `http://<INFERENCE_LB_IP>:8080/` *(new IP on re-deploy)* | KAITO Workspace (replicas, GPU) |
+| **Pipeline** (the Pipeline steward) | `http://<PIPELINE_LB_IP>:8080/` *(new IP on re-deploy)* | MLflow Model Registry (versions, stages) |
+| **Inference** (the Inference steward) | `http://<INFERENCE_LB_IP>:8080/` *(new IP on re-deploy)* | KAITO Workspace (replicas, GPU) |
 
 > **Note:** LoadBalancer IPs are **not** the old ones (`104.44.182.236` / `135.233.240.146`) — those were freed at shutdown. After deploy, fetch the fresh IP:
 > `kubectl -n meshops get svc hello-quality-chat -o jsonpath='{.status.loadBalancer.ingress[0].ip}'`

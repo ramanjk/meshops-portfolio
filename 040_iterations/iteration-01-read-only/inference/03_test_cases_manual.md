@@ -1,4 +1,4 @@
-# Iteration-01 — Manual Test Cases: Walking the Slice by Hand
+# Iteration 1 (Read-Only) — Manual Test Cases: Walking the Slice by Hand
 
 *Audience: Ram running the manual suite once the deployment lands. Read this as a guided walkthrough — you'll open a terminal, run a command, watch the output, and tick a box.*
 
@@ -274,7 +274,7 @@ No automated red-team corpus — M-10 is a single manual probe this iteration; a
 
 **Sources**
 
-*Repo files:* `040_iterations/iteration-01/01_use_case.md` · `040_iterations/iteration-01/02_implementation_guide.md`
+*Repo files:* `040_iterations/iteration-01-read-only/inference/01_use_case.md` · `040_iterations/iteration-01-read-only/inference/02_implementation_guide.md`
 
 *Web:*
 - [AKS-MCP access levels (readonly/readwrite/admin)](https://learn.microsoft.com/en-us/azure/aks/aks-model-context-protocol-server)

@@ -1,4 +1,4 @@
-# Iteration-01 — Automated Tests: The Safety Net
+# Iteration 1 (Read-Only) — Automated Tests: The Safety Net
 
 *Audience: Ram writing the tests; test coverage. These run on your laptop with `uv run pytest` — no Azure spend, no cluster needed.*
 
@@ -286,7 +286,7 @@ Live Azure OpenAI calls (cost + flakiness — the chat client is mocked; the rea
 
 **Sources**
 
-*Repo files:* `040_iterations/iteration-01/01_use_case.md` · `040_iterations/iteration-01/02_implementation_guide.md`
+*Repo files:* `040_iterations/iteration-01-read-only/inference/01_use_case.md` · `040_iterations/iteration-01-read-only/inference/02_implementation_guide.md`
 
 *Web:*
 - [agent-framework Python samples — observability](https://github.com/microsoft/agent-framework/tree/main/python)

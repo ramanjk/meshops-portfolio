@@ -62,7 +62,7 @@ flowchart LR
 
 </details>
 
-**Author:** Kuruva Ramanjaneyulu (Ram) · **Status:** iteration 1 — planning docs only, no code yet · **Visibility:** public from day 1
+**Author:** Kuruva Ramanjaneyulu (Ram) · **Status:** Iteration 1 (read-only) complete for 3 stewards — Inference, Pipeline & Quality built, tested and deployed on the lab AKS cluster · **Visibility:** public from day 1
 
 ---
 
@@ -105,7 +105,7 @@ flowchart LR
 
 **Build:**
 
-17. [Iterations](040_iterations/) — per-iteration deliverable bundles. Current: [iteration-01 (P0 Foundations)](040_iterations/iteration-01/)
+17. [Iterations](040_iterations/) — deliverable bundles organised by **maturity phase** (read-only → gated write → broader), not by steward. Current: [Iteration 1 — Read-Only Foundation](040_iterations/iteration-01-read-only/) (Inference, Pipeline, Quality stewards, all read-only).
 
 > **Consolidation note:** the proposal and the use-cases/architecture/tech-stack
 > design docs are now canonical under `020_project_proposal/` and `030_design/`.

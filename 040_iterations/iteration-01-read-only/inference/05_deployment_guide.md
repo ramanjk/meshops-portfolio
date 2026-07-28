@@ -1,4 +1,4 @@
-# Iteration-01 — Deployment Guide: Shipping It to Azure for ~$0 at Idle
+# Iteration 1 (Read-Only) — Deployment Guide: Shipping It to Azure for ~$0 at Idle
 
 *Audience: Ram provisioning Azure and installing the chart; topology and cost line. Read this as the moment you take the tested code and put it on a real cluster — and prove it costs almost nothing while it sleeps.*
 
@@ -519,7 +519,7 @@ The agent runs as a CronJob (the read-only demo cadence); a durable, retrying sc
 
 **Sources**
 
-*Repo files:* `040_iterations/iteration-01/01_use_case.md` · `040_iterations/iteration-01/02_implementation_guide.md` · `030_design/02_prd.md`
+*Repo files:* `040_iterations/iteration-01-read-only/inference/01_use_case.md` · `040_iterations/iteration-01-read-only/inference/02_implementation_guide.md` · `030_design/02_prd.md`
 
 *Web:*
 - [AKS — enable managed Prometheus + Grafana](https://learn.microsoft.com/en-us/azure/azure-monitor/containers/kubernetes-monitoring-enable)

@@ -1,4 +1,4 @@
-# Iteration-03 — Implementation Guide: Building the Quality Steward
+# Iteration 1 (Read-Only) — Implementation Guide: Building the Quality Steward
 
 *Audience: Ram. You already built the Inference and Pipeline Stewards, so this guide leans on both: it calls out only what's **different** and reuses everything that's the same. Read `01_use_case.md` first for the "what/why"; this is the "how it's built."*
 
@@ -9,7 +9,7 @@ The Quality Steward is the same skeleton for the third time, with three organs s
 ```mermaid
 mindmap
   root((Build hello-quality))
-    Reused from iter-01/02
+    Reused from the Inference and Pipeline builds
       MAF agent loop
       Azure OpenAI gpt-4.1
       Langfuse + OTel + Prom
@@ -65,7 +65,7 @@ Two prompts mirroring the earlier personas:
 
 Both forbid any write and instruct the steward to **decline** requests to open a prompt-version PR, edit a dataset, create a score, or delete a trace — no-write guarantee #2.
 
-Prompts reach the pod via a ConfigMap built with `.Files.Get`, which only reads inside the chart dir — hence the committed symlink `helm/quality/prompts → ../../prompts` (git mode `120000`), the same trick as iter-01/02. The `_read_prompt`/`_read_system_prompt` helpers ignore an **empty** `/etc/prompts` file and fall back to the image-baked persona, so a blank ConfigMap can never wipe the identity.
+Prompts reach the pod via a ConfigMap built with `.Files.Get`, which only reads inside the chart dir — hence the committed symlink `helm/quality/prompts → ../../prompts` (git mode `120000`), the same trick as the Inference and Pipeline builds. The `_read_prompt`/`_read_system_prompt` helpers ignore an **empty** `/etc/prompts` file and fall back to the image-baked persona, so a blank ConfigMap can never wipe the identity.
 
 `prompts/CHANGELOG.md` is bumped to **1.3.0** for the Quality persona addition.
 
@@ -74,7 +74,7 @@ Prompts reach the pod via a ConfigMap built with `.Files.Get`, which only reads 
 ## 4. Packaging (shared image, dedicated chart)
 
 - **Dockerfile / pyproject** are shared. The image bakes **all** stewards (`src/stewards`, `src/mcp_servers`); `pyproject` adds `hello-quality` and `langfuse-mcp` console scripts. The Helm `command:` picks `python -m stewards.quality`.
-- **`helm/quality/`** is a **dedicated chart**, deliberately isolated from the steward-1/2 charts so it can't regress them. Templates mirror iter-02 (`deployment`, `service`, `ingress`, `secretproviderclass`, `podmonitor`) with two key differences:
+- **`helm/quality/`** is a **dedicated chart**, deliberately isolated from the steward-1/2 charts so it can't regress them. Templates mirror the Pipeline build (`deployment`, `service`, `ingress`, `secretproviderclass`, `podmonitor`) with two key differences:
   - **No `rbac.yaml`.** The Quality steward reads Langfuse over HTTP, not the Kubernetes API, so it needs **zero** cluster RBAC. Its ServiceAccount exists only to carry Workload Identity (AOAI + Key Vault for the `LANGFUSE_*` secrets).
   - **env / secrets** carry the `LANGFUSE_*` triple (host as a plain value; public/secret keys mounted from Key Vault via the CSI `SecretProviderClass`) instead of the MLflow or AKS/Prom vars.
 
@@ -82,7 +82,7 @@ Prompts reach the pod via a ConfigMap built with `.Files.Get`, which only reads 
 
 ## 5. The substrate (already in-cluster — nothing to stand up)
 
-Unlike iteration-02 (which had to deploy and seed MLflow), the Quality Steward's substrate **already exists**: the `langfuse` namespace has been running since iteration-01 as the OTel sink. So there is **no `extras/` substrate manifest to apply** — the `helm/quality/extras/` dir is empty.
+Unlike the Pipeline steward (which had to deploy and seed MLflow), the Quality Steward's substrate **already exists**: the `langfuse` namespace has been running since the Inference steward as the OTel sink. So there is **no `extras/` substrate manifest to apply** — the `helm/quality/extras/` dir is empty.
 
 The one caveat is **data**: traces are plentiful (every steward emits them), but *evaluation scores* only exist once something writes them. On a fresh lab, expect the steward to honestly report `total_scores: 0` and `mean_quality_score: null`. Seeding real scores — via the Langfuse API or a Ragas/Promptfoo/Foundry eval job — is a later iteration's job (see `05_deployment_guide.md` §"Seeding eval scores").
 
@@ -90,7 +90,7 @@ The one caveat is **data**: traces are plentiful (every steward emits them), but
 
 ## 6. Tests
 
-`pytest -q` — **38 pass total** (was 26 after iter-02; +12 Quality). Quality-specific:
+`pytest -q` — **38 pass total** (was 26 after the Pipeline build; +12 Quality). Quality-specific:
 
 - `tests/unit/test_quality_schemas.py` — round-trip, `mean_quality_score` bounds + `null`, `requires_hitl=True` rejected (no-write layer #3), extra fields dropped.
 - `tests/unit/test_quality_settings.py` — required-env enforcement, `trace_sample_limit` bounds.
@@ -103,9 +103,9 @@ The one caveat is **data**: traces are plentiful (every steward emits them), but
 
 ---
 
-## 7. What carried over from iter-02's lessons
+## 7. What carried over from the Pipeline build's lessons
 
-- **Empty-file prompt fallback** — kept, so a blank ConfigMap can't erase the persona (the iter-01 root-cause bug).
+- **Empty-file prompt fallback** — kept, so a blank ConfigMap can't erase the persona (the Inference build's root-cause bug).
 - **Dedicated chart + no shared RBAC** — kept; HTTP-only substrate means no kube API access.
 - **Content-filter rough edge** — the same Azure OpenAI `ContentFiltered` behaviour applies here (an aggressive jailbreak may surface a raw error rather than a graceful refusal; the write still never happens). Catching `ContentFiltered` in `serve.py` for a friendly message remains a cross-steward future hardening.
 

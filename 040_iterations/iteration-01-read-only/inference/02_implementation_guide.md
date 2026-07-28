@@ -1,4 +1,4 @@
-# Iteration-01 — Implementation Guide: Building the Inference Steward
+# Iteration 1 (Read-Only) — Implementation Guide: Building the Inference Steward
 
 *Audience: Ram, building this end-to-end with no further help. Assumes deep AKS / kubectl / Helm / Terraform fluency, and walks slowly through MAF, MCP, Langfuse, and OTel because those are the new ground. Every file's complete source is in this guide — copy it, build it, ship it.*
 
@@ -2228,7 +2228,7 @@ This guide builds the read-only slice and nothing past it. There is no proposer 
 
 **Sources**
 
-*Repo files:* `030_design/03_architecture.md` · `030_design/04_tech_stack.md` · `040_iterations/iteration-01/01_use_case.md`
+*Repo files:* `030_design/03_architecture.md` · `030_design/04_tech_stack.md` · `040_iterations/iteration-01-read-only/inference/01_use_case.md`
 
 *Web:*
 - [agent-framework 1.0 — Python](https://github.com/microsoft/agent-framework/tree/main/python)

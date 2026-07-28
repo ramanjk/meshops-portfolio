@@ -1,6 +1,6 @@
-# Iteration-03 — The Use Case: Teaching the Quality Steward to Watch the Traces
+# Iteration 1 (Read-Only) — The Use Case: Teaching the Quality Steward to Watch the Traces
 
-*Audience: Ram (builder). Read this first — it is the story of what iteration-03's agent actually does, and **how it relates to the Inference and Pipeline Stewards you already understand.** Read it before the implementation guide, the tests, or the deployment guide.*
+*Audience: Ram (builder). Read this first — it is the story of what the Quality steward actually does, and **how it relates to the Inference and Pipeline Stewards you already understand.** Read it before the implementation guide, the tests, or the deployment guide.*
 
 You now have two stewards. The **Inference Steward** watches a live GPU node and answers *"is the deployed model serving healthily right now?"* The **Pipeline Steward** watches the MLflow registry and answers *"which version should be deployed, and is the next candidate ready to promote?"*
 
@@ -10,7 +10,7 @@ This iteration builds only the **read-only half** of the Quality Steward — the
 
 > **UC — Quality Steward runs a drift scan and proposes a prompt fix (read-only `observe → reason → report` slice)**
 >
-> **Why this slice:** The Quality Steward (`035_others/agent-catalog.md` §5) is the LLMOps-quality steward. The *full* job is a loop — scan trace/eval batches → detect drift → **propose a prompt-version PR** → human approves → the PR merges. Iteration-03 deliberately implements only the **observe → reason → report** left-half: the steward *reads* recent traces and evaluation scores and *explains* quality health, but proposes no PR and writes nothing. This proves the third steward's shape (a new substrate, a new MCP tool, a new schema) while reusing the entire observability + identity spine from the first two.
+> **Why this slice:** The Quality Steward (`035_others/agent-catalog.md` §5) is the LLMOps-quality steward. The *full* job is a loop — scan trace/eval batches → detect drift → **propose a prompt-version PR** → human approves → the PR merges. This read-only slice deliberately implements only the **observe → reason → report** left-half: the steward *reads* recent traces and evaluation scores and *explains* quality health, but proposes no PR and writes nothing. This proves the third steward's shape (a new substrate, a new MCP tool, a new schema) while reusing the entire observability + identity spine from the first two.
 >
 > **Actor:** The `hello-quality` agent (the Quality Steward, MAF Python, on the lab AKS cluster), triggered by Ram (the Operator) or a periodic cycle.
 >
@@ -105,7 +105,7 @@ The reason building the third steward was fast is that it is the **same agent sk
 
 ## 4. Where This Slice Sits in the Full Quality Loop
 
-Where we are in the story: just like the first two iterations stopped before the agent's first *opinion about what to change*, iteration-03 stops at the same edge — it reads and explains quality, but never proposes a prompt fix.
+Where we are in the story: just like the first two iterations stopped before the agent's first *opinion about what to change*, the Quality steward stops at the same edge — it reads and explains quality, but never proposes a prompt fix.
 
 ```mermaid
 flowchart LR
@@ -125,13 +125,13 @@ flowchart LR
     Rep -.->|later iteration extends here| D --> P --> G --> A
 ```
 
-***Figure 2: The full Quality loop. Iteration-03 builds only the three green boxes (observe → reason → report). The eval-suite run, the prompt-PR proposal, the HITL gate, and the merge are all deliberately deferred so the agent has no way to change a prompt yet. `drift_suspected` in the output is a read-only signal — it flags a concern, it does not open a PR.***
+***Figure 2: The full Quality loop. This read-only slice builds only the three green boxes (observe → reason → report). The eval-suite run, the prompt-PR proposal, the HITL gate, and the merge are all deliberately deferred so the agent has no way to change a prompt yet. `drift_suspected` in the output is a read-only signal — it flags a concern, it does not open a PR.***
 
-**Checkpoint:** Read-only observe slice today; detect/propose/gate/act later — the exact same staging strategy as iterations 01 and 02.
+**Checkpoint:** Read-only observe slice today; detect/propose/gate/act later — the exact same staging strategy as the Inference and Pipeline stewards.
 
 ---
 
-## 5. The Three No-Write Guarantees (identical philosophy to iterations 01–02)
+## 5. The Three No-Write Guarantees (identical philosophy to the Inference and Pipeline stewards)
 
 The Quality Steward *cannot* change anything, and this is enforced three independent ways — the same defence-in-depth as the earlier stewards:
 

@@ -1,6 +1,6 @@
-# Iteration-02 — The Use Case: Teaching the Pipeline Steward to Watch the Registry
+# Iteration 1 (Read-Only) — The Use Case: Teaching the Pipeline Steward to Watch the Registry
 
-*Audience: Ram (builder). Read this first — it is the story of what iteration-02's agent actually does, and — because this is the question you asked — **how it relates to the Inference Steward you already understand.** Read it before the implementation guide, the tests, or the deployment guide.*
+*Audience: Ram (builder). Read this first — it is the story of what the Pipeline steward actually does, and — because this is the question you asked — **how it relates to the Inference Steward you already understand.** Read it before the implementation guide, the tests, or the deployment guide.*
 
 You already know the Inference Steward. It sits beside a running GPU node, opens its eyes every so often, looks at a **live KAITO Workspace**, and reports how the *serving* looks. It answers the question *"is the model that's deployed healthy right now?"*
 
@@ -10,7 +10,7 @@ This iteration builds only the **read-only half** of the Pipeline Steward — th
 
 > **UC-03 — Pipeline runs a fine-tune and proposes a promotion (read-only `observe → reason → report` slice)**
 >
-> **Why this slice:** UC-03 (`030_design/01_use_cases.md` §UC-03) is the MLOps steward. The *full* UC-03 is a multi-stage loop — fine-tune → hand off to Quality for an eval gate → **propose** a registry promotion → human approves → the write lands in MLflow. Iteration-02 deliberately implements only the **observe → reason → report** left-half: the steward *reads* the registry and *explains* promotion-readiness, but proposes nothing and writes nothing. This proves the second steward's shape (a new substrate, a new MCP tool, a new schema) while reusing the entire observability + identity spine from iteration-01.
+> **Why this slice:** UC-03 (`030_design/01_use_cases.md` §UC-03) is the MLOps steward. The *full* UC-03 is a multi-stage loop — fine-tune → hand off to Quality for an eval gate → **propose** a registry promotion → human approves → the write lands in MLflow. This read-only slice deliberately implements only the **observe → reason → report** left-half: the steward *reads* the registry and *explains* promotion-readiness, but proposes nothing and writes nothing. This proves the second steward's shape (a new substrate, a new MCP tool, a new schema) while reusing the entire observability + identity spine from the Inference steward.
 >
 > **Actor:** The `hello-pipeline` agent (the Pipeline Steward, MAF Python, on the lab AKS cluster), triggered by Ram (the Operator) or a periodic cycle.
 >
@@ -122,7 +122,7 @@ The reason building the second steward was fast is that it is the **same agent s
 
 ## 4. Where This Slice Sits in the Full UC-03
 
-Where we are in the story: just like iteration-01 stopped at a cliff edge before the agent's first *opinion about what to do*, iteration-02 stops at the same edge — it reads and explains the registry, but never proposes a promotion.
+Where we are in the story: just like the Inference steward stopped at a cliff edge before the agent's first *opinion about what to do*, the Pipeline steward stops at the same edge — it reads and explains the registry, but never proposes a promotion.
 
 ```mermaid
 flowchart LR
@@ -142,13 +142,13 @@ flowchart LR
     Rep -.->|later iteration extends here| Q --> P --> G --> A
 ```
 
-***Figure 2: The full UC-03 loop. Iteration-02 builds only the three green boxes (observe → reason → report). The Quality handoff, the promotion proposal, the HITL gate, and the registry write are all deliberately deferred so the agent has no way to change the registry yet.***
+***Figure 2: The full UC-03 loop. This read-only slice builds only the three green boxes (observe → reason → report). The Quality handoff, the promotion proposal, the HITL gate, and the registry write are all deliberately deferred so the agent has no way to change the registry yet.***
 
-**Checkpoint:** Read-only observe slice today; propose/gate/act (and the Pipeline→Quality handoff) later — the exact same staging strategy as iteration-01.
+**Checkpoint:** Read-only observe slice today; propose/gate/act (and the Pipeline→Quality handoff) later — the exact same staging strategy as the Inference steward.
 
 ---
 
-## 5. The Three No-Write Guarantees (identical philosophy to iteration-01)
+## 5. The Three No-Write Guarantees (identical philosophy to the Inference steward)
 
 The Pipeline Steward *cannot* change the registry, and this is enforced three independent ways — the same defence-in-depth you built for Inference:
 

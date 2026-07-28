@@ -1,8 +1,8 @@
-# Iteration-03 — Deployment Guide: Shipping the Quality Steward
+# Iteration 1 (Read-Only) — Deployment Guide: Shipping the Quality Steward
 
-*Audience: Ram, standing up `hello-quality` on the lab AKS cluster. Assumes the iteration-01/02 substrate (AKS, ACR, Key Vault, Azure OpenAI, **Langfuse already in-cluster**, the `msi-hello-inference` managed identity) is already standing.*
+*Audience: Ram, standing up `hello-quality` on the lab AKS cluster. Assumes the shared lab substrate (AKS, ACR, Key Vault, Azure OpenAI, **Langfuse already in-cluster**, the `msi-hello-inference` managed identity) stood up with the Inference and Pipeline builds is already standing.*
 
-This one is shorter than iteration-02, because the Quality Steward's substrate — the **Langfuse project** — has been running since iteration-01 as the OTel sink. **There is nothing to stand up or seed for the steward to function.** So it's four moves: build the image, wire Workload Identity, deploy, verify. (Then an *optional* fifth: seed eval scores so the drift reasoning has something to chew on.)
+This one is shorter than the Pipeline steward, because the Quality Steward's substrate — the **Langfuse project** — has been running since the Inference steward as the OTel sink. **There is nothing to stand up or seed for the steward to function.** So it's four moves: build the image, wire Workload Identity, deploy, verify. (Then an *optional* fifth: seed eval scores so the drift reasoning has something to chew on.)
 
 > **⚠️ The lab is cost-stopped.** Before anything below, resume the environment. Then re-expose the earlier stewards if you want the side-by-side mesh tests (their old LB IPs `104.44.182.236` / `135.233.240.146` were freed at shutdown and will be reassigned).
 >

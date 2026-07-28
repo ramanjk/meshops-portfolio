@@ -85,8 +85,14 @@ Substrate & stack (fixed):
 - KAITO Workspaces for model serving; MLflow Model Registry for the pipeline
 
 Non-negotiable engineering principles:
-1. Build in thin vertical slices. Each iteration = ONE steward, and only the
-   read-only "observe -> reason -> report" half first. Defer propose/act/HITL.
+1. Build in thin vertical slices along TWO axes, kept distinct:
+   - **Steward (breadth)** = which Ops domain (Inference, Pipeline, Quality, ...).
+   - **Iteration (depth)** = capability maturity: Iteration 1 = read-only
+     "observe -> reason -> report"; Iteration 2 = gated write (propose -> HUMAN
+     approves -> act); Iteration 3+ = broader scope. "Iteration" is NOT a synonym
+     for "steward" — every steward climbs the same read-only -> write -> HITL ladder.
+   Do the read-only slice (Iteration 1) of each steward first; defer propose/act/HITL
+   to Iteration 2, and never ship a write without a human gate (ADR-0011).
 2. Safety is defence-in-depth. A read-only steward must be unable to write via
    THREE independent layers: (a) tools expose no write verbs, (b) the persona
    forbids writes, (c) the output schema cannot express a write.
@@ -101,7 +107,7 @@ plan. Keep changes surgical and validate (tests, lint, live smoke test).
 
 ---
 
-## 2. The per-steward build prompt (reused each iteration)
+## 2. The per-steward build prompt (reused for each steward's Iteration-1 read-only slice)
 
 The template fired for each steward — swap the substrate:
 

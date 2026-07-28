@@ -1,4 +1,4 @@
-# Iteration-02 — Manual Test Cases: Testing the Pipeline Steward by Prompt
+# Iteration 1 (Read-Only) — Manual Test Cases: Testing the Pipeline Steward by Prompt
 
 *Audience: Ram, sitting at a terminal with the live chat endpoint open. This is the hands-on playbook you asked for — paste a prompt, read the reply, and check it against "what a good answer looks like." Every case teaches you one thing about what this steward can and cannot do, and a few cases put it side-by-side with the Inference Steward so the connection between them clicks.*
 
@@ -9,7 +9,7 @@ The Pipeline Steward is deployed and its chat endpoint is live. On paper it work
 | Steward | Chat URL | Watches |
 |---|---|---|
 | **Pipeline** (this iteration) | `http://135.233.240.146:8080/` | MLflow Model Registry (versions, stages) |
-| **Inference** (iteration-01) | `http://104.44.182.236:8080/` | KAITO Workspace (replicas, GPU) |
+| **Inference** (the Inference steward) | `http://104.44.182.236:8080/` | KAITO Workspace (replicas, GPU) |
 
 > **Note:** LoadBalancer IPs can change if a Service is recreated. If a URL stops responding, re-fetch it:
 > `kubectl -n meshops get svc hello-pipeline-chat -o jsonpath='{.status.loadBalancer.ingress[0].ip}'`

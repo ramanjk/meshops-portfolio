@@ -1,4 +1,4 @@
-# Iteration-01 — The Use Case: Teaching the Inference Steward to Watch
+# Iteration 1 (Read-Only) — The Use Case: Teaching the Inference Steward to Watch
 
 *Audience: Ram (builder). Read this first — it is the story of what iteration-01's agent actually does, before you open the implementation guide, the tests, or the deployment guide.*
 
