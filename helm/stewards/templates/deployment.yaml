@@ -112,6 +112,14 @@ spec:
                 secretKeyRef:
                   name: github-token
                   key: token
+            # gh needs a writable config/state dir; the root FS is read-only, so
+            # point it (and XDG dirs) at the tmp emptyDir mounted at /tmp.
+            - name: GH_CONFIG_DIR
+              value: /tmp/gh
+            - name: XDG_STATE_HOME
+              value: /tmp
+            - name: XDG_DATA_HOME
+              value: /tmp
 {{- end }}
 {{- end }}
             # uv needs a writable cache dir; root FS is read-only, so point it

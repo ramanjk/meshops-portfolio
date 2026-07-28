@@ -25,6 +25,17 @@ RUN curl -sL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubec
         -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
+# The Iteration-2 github_pr HITL approval channel shells out to the GitHub CLI
+# (gh api) to open/poll proposal PRs. gh authenticates from the GH_TOKEN env var
+# (no interactive login / no on-disk credentials needed).
+ARG GH_VERSION=2.65.0
+RUN curl -sL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+        -o /tmp/gh.tar.gz && \
+    tar -xzf /tmp/gh.tar.gz -C /tmp && \
+    mv "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh && \
+    chmod +x /usr/local/bin/gh && \
+    rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64"
+
 # Dependencies first, for cache friendliness. README.md is required because
 # pyproject.toml declares `readme = "README.md"`. Install deps only (not the
 # project itself) here so this layer caches until deps change.
