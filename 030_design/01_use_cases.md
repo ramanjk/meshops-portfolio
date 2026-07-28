@@ -409,7 +409,7 @@ The mapping column ties each catalog ID back to the older `035_others/use-cases.
 - **No closed-loop autonomous actuation.** Every write has a HITL gate (ADR-0001 / planned ADR-0011) — including "obvious" actions like scaling.
 - **No multi-tenancy per customer.** Single tenant in v1; the upgrade path is roadmap (UC-16).
 - **No pre-training / RLHF / DPO of foundation models.** Only QLoRA/LoRA fine-tunes on open-weights bases; DPO is an advanced-track stretch.
-- **No bespoke human-operator UI.** HITL gates use GitHub PR review + Slack approval.
+- **No bespoke human-operator UI.** HITL gates use GitHub PR review + Slack approval — plus an interactive in-steward chat approval channel for synchronous/operator-facing actions (ADR-0011 makes approval channels pluggable on one shared gate + audit; the chat card is a channel, not a separate console).
 - **No cross-cloud portability.** Azure-only by design (ADR-0003).
 - **No monetization / pricing / sales.** This is a career-portfolio build; the focus is the product, not a commercial offering.
 
