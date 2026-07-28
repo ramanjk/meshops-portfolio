@@ -17,8 +17,9 @@ class QualityObservation(BaseModel):
     """One read-only observation of LLM quality signals in Langfuse.
 
     Future schema versions will add ``proposed_prompt_pr`` and ``hitl_envelope``;
-    iteration-03 deliberately omits those fields so the LLM has no language to
-    express a repository write (the Quality steward's eventual gated action).
+    this read-only iteration (Iteration 1) deliberately omits those fields so
+    the LLM has no language to express a repository write (the Quality steward's
+    eventual gated action).
     """
 
     traces_observed: int = Field(
@@ -59,7 +60,7 @@ class QualityObservation(BaseModel):
     def _no_write_intent(self) -> Self:
         if self.requires_hitl:
             raise ValueError(
-                "requires_hitl=True is not allowed in iteration-03 (read-only). "
+                "requires_hitl=True is not allowed in the read-only iteration. "
                 "If you see this, the third-layer no-write defence has fired."
             )
         return self

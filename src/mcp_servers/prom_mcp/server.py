@@ -1,7 +1,7 @@
 """Tiny Prom-MCP server — exposes `query_promql` against Azure Managed Prometheus.
 
 This is intentionally minimal — it is NOT a general-purpose Prometheus MCP.
-In iteration-01 it exists so the agent has a stable tool interface for any
+In this read-only iteration it exists so the agent has a stable tool interface for any
 PromQL query; the underlying endpoint is Azure Monitor's Managed Prometheus
 query API.
 

@@ -86,7 +86,7 @@ variable "tags" {
   description = "Tags applied to every resource for cost attribution."
   default = {
     project     = "meshops"
-    iteration   = "iteration-01"
+    iteration   = "1-read-only"
     environment = "lab"
     owner       = "ram"
   }

@@ -1,4 +1,4 @@
-# MeshOps — in-cluster MLflow tracking + Model Registry (iteration-02 substrate)
+# MeshOps — in-cluster MLflow tracking + Model Registry (Pipeline steward substrate, read-only iteration)
 #
 # The Pipeline Steward (hello-pipeline) observes this registry read-only over the
 # MLflow REST API 2.0. This is a lab-grade deployment: a single MLflow server

@@ -1,4 +1,4 @@
-"""Unit tests for the iteration-03 schema and the third no-write defence layer."""
+"""Unit tests for the Quality steward's read-only schema and the third no-write defence layer."""
 from __future__ import annotations
 
 import json

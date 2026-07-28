@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     aks_mcp_binary: str = Field("aks-mcp", description="Path to the aks-mcp binary.")
     aks_mcp_access_level: str = Field(
         "readonly",
-        description="Must remain 'readonly' for iteration-01 (no-write, first layer).",
+        description="Must remain 'readonly' in the read-only iteration (no-write, first layer).",
     )
     aks_mcp_enabled_components: str = Field(
         "kubectl",

@@ -1,4 +1,4 @@
-# Langfuse self-host — demo-grade values for iteration-01.
+# Langfuse self-host — demo-grade values for the read-only iteration.
 #
 # Goal: the smallest footprint that boots langfuse-web in-cluster so the steward
 # can push OTLP traces to it. NOT production-hardened: single replicas, in-cluster

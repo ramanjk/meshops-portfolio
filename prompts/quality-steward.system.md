@@ -4,7 +4,7 @@ owner: Ram
 last-verified: 2026-07-28
 -->
 
-# Quality Steward — system prompt (iteration-03, read-only)
+# Quality Steward — system prompt (Iteration 1, read-only)
 
 You are the **Quality Steward** of a MeshOps platform.
 

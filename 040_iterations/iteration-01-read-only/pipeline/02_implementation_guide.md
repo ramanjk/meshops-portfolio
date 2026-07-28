@@ -139,8 +139,8 @@ class PipelineObservation(BaseModel):
     """One read-only observation of an MLflow registered model.
 
     Future schema versions will add ``proposed_promotion`` and ``hitl_envelope``;
-    iteration-02 deliberately omits those fields so the LLM has no language to
-    express a registry write.
+    this read-only iteration (Iteration 1) deliberately omits those fields so
+    the LLM has no language to express a registry write.
     """
 
     registered_model_name: str = Field(..., description="Name of the MLflow registered model observed.")
@@ -165,15 +165,13 @@ class PipelineObservation(BaseModel):
     def _no_write_intent(self) -> Self:
         if self.requires_hitl:
             raise ValueError(
-                "requires_hitl=True is not allowed in iteration-02 (read-only). "
+                "requires_hitl=True is not allowed in the read-only iteration. "
                 "If you see this, the third-layer no-write defence has fired."
             )
         return self
 ```
 
 Read what this buys you: the schema has **fields only for observing** — counts, the latest version, a prose summary. There is no `proposed_promotion` field, so the model literally has no JSON slot to request a stage change (defence layer #3, the schema). The `requires_hitl` validator is a tripwire: if a future prompt ever coaxes the model to set it `True`, validation fails closed.
-
-> The docstrings still say "iteration-02" because in code that string named this steward's build order at the time; the maturity model (this is *Iteration 1, read-only, for the Pipeline steward*) is documented in the phase `README.md`. The behaviour is unchanged.
 
 ---
 
@@ -369,7 +367,7 @@ def _enable_langfuse_and_otel(settings: Settings) -> None:
     os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
     os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
     os.environ.setdefault("ENABLE_INSTRUMENTATION", "true")
-    # We deliberately do NOT enable sensitive data in iteration-02.
+    # We deliberately do NOT enable sensitive data in the read-only iteration.
     os.environ.setdefault("ENABLE_SENSITIVE_DATA", "false")
 
     langfuse = get_client()
@@ -454,7 +452,7 @@ if __name__ == "__main__":
 """Tiny MLflow-MCP server — read-only access to an MLflow Model Registry.
 
 This is intentionally minimal — it is NOT a general-purpose MLflow MCP. In
-iteration-02 it exists so the Pipeline steward has a stable, read-only tool
+this read-only iteration it exists so the Pipeline steward has a stable, read-only tool
 interface to observe the model registry (registered models, versions, stage
 tags) without any ability to register, transition, or delete.
 
@@ -777,7 +775,7 @@ owner: Ram
 last-verified: 2026-07-27
 -->
 
-# Pipeline Steward — system prompt (iteration-02, read-only)
+# Pipeline Steward — system prompt (Iteration 1, read-only)
 
 You are the **Pipeline Steward** of a MeshOps platform.
 
@@ -841,7 +839,7 @@ purpose: Conversational persona for the interactive chat endpoint. Same identity
          natural language instead of the single-JSON observe/report format.
 -->
 
-# Pipeline Steward — chat persona (iteration-02, read-only)
+# Pipeline Steward — chat persona (Iteration 1, read-only)
 
 You are the **Pipeline Steward** of a MeshOps platform. "Pipeline Steward" is
 your name and role — it is who you are, not a hat you wear. You are **not** a
@@ -930,7 +928,7 @@ A **dedicated chart**, deliberately isolated from the Inference chart so it can'
 ```yaml
 apiVersion: v2
 name: meshops-pipeline
-description: MeshOps Pipeline Steward — iteration-02 ships the hello-pipeline steward (read-only MLflow registry observer).
+description: MeshOps Pipeline Steward — ships the hello-pipeline steward (Iteration 1, read-only MLflow registry observer).
 type: application
 version: 0.1.0
 appVersion: "0.0.1"
@@ -1298,7 +1296,7 @@ Because the registry has to exist before the steward can read it, two manifests 
 *A single-replica MLflow server (`ghcr.io/mlflow/mlflow:v2.16.2`), sqlite backend + local artifact store on one `managed-csi` PVC, ClusterIP `:5000`. Runs `--workers=1` inside a 1.5Gi limit — learned the hard way: the default 4 gunicorn workers OOM at 512Mi and CrashLoop mid-seed.*
 
 ```yaml
-# MeshOps — in-cluster MLflow tracking + Model Registry (iteration-02 substrate)
+# MeshOps — in-cluster MLflow tracking + Model Registry (Pipeline steward substrate, read-only iteration)
 #
 # The Pipeline Steward (hello-pipeline) observes this registry read-only over the
 # MLflow REST API 2.0. This is a lab-grade deployment: a single MLflow server

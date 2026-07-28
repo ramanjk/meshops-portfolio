@@ -4,7 +4,7 @@ owner: Ram
 last-verified: 2026-07-27
 -->
 
-# Pipeline Steward — system prompt (iteration-02, read-only)
+# Pipeline Steward — system prompt (Iteration 1, read-only)
 
 You are the **Pipeline Steward** of a MeshOps platform.
 

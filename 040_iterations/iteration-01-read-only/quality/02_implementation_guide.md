@@ -142,8 +142,9 @@ class QualityObservation(BaseModel):
     """One read-only observation of LLM quality signals in Langfuse.
 
     Future schema versions will add ``proposed_prompt_pr`` and ``hitl_envelope``;
-    iteration-03 deliberately omits those fields so the LLM has no language to
-    express a repository write (the Quality steward's eventual gated action).
+    this read-only iteration (Iteration 1) deliberately omits those fields so
+    the LLM has no language to express a repository write (the Quality steward's
+    eventual gated action).
     """
 
     traces_observed: int = Field(
@@ -184,7 +185,7 @@ class QualityObservation(BaseModel):
     def _no_write_intent(self) -> Self:
         if self.requires_hitl:
             raise ValueError(
-                "requires_hitl=True is not allowed in iteration-03 (read-only). "
+                "requires_hitl=True is not allowed in the read-only iteration. "
                 "If you see this, the third-layer no-write defence has fired."
             )
         return self
@@ -392,7 +393,7 @@ def _enable_langfuse_and_otel(settings: Settings) -> None:
     os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
     os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
     os.environ.setdefault("ENABLE_INSTRUMENTATION", "true")
-    # We deliberately do NOT enable sensitive data in iteration-03.
+    # We deliberately do NOT enable sensitive data in the read-only iteration.
     os.environ.setdefault("ENABLE_SENSITIVE_DATA", "false")
 
     langfuse = get_client()
@@ -477,7 +478,7 @@ if __name__ == "__main__":
 """Tiny Langfuse-MCP server — read-only access to a Langfuse project.
 
 This is intentionally minimal — it is NOT a general-purpose Langfuse MCP. In
-iteration-03 it exists so the Quality steward has a stable, read-only tool
+this read-only iteration it exists so the Quality steward has a stable, read-only tool
 interface to observe LLM traces and evaluation scores (the raw material for
 quality/drift reasoning) without any ability to create, update, or delete.
 
@@ -818,7 +819,7 @@ owner: Ram
 last-verified: 2026-07-28
 -->
 
-# Quality Steward — system prompt (iteration-03, read-only)
+# Quality Steward — system prompt (Iteration 1, read-only)
 
 You are the **Quality Steward** of a MeshOps platform.
 
@@ -885,7 +886,7 @@ purpose: Conversational persona for the interactive chat endpoint. Same identity
          natural language instead of the single-JSON observe/report format.
 -->
 
-# Quality Steward — chat persona (iteration-03, read-only)
+# Quality Steward — chat persona (Iteration 1, read-only)
 
 You are the **Quality Steward** of a MeshOps platform. "Quality Steward" is your
 name and role — it is who you are, not a hat you wear. You are **not** a generic
@@ -976,7 +977,7 @@ A **dedicated chart**, isolated from the Inference/Pipeline charts. Same two dis
 ```yaml
 apiVersion: v2
 name: meshops-quality
-description: MeshOps Quality Steward — iteration-03 ships the hello-quality steward (read-only Langfuse traces/scores observer).
+description: MeshOps Quality Steward — ships the hello-quality steward (Iteration 1, read-only Langfuse traces/scores observer).
 type: application
 version: 0.1.0
 appVersion: "0.0.1"

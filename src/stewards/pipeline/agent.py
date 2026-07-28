@@ -185,7 +185,7 @@ def _enable_langfuse_and_otel(settings: Settings) -> None:
     os.environ.setdefault("LANGFUSE_SECRET_KEY", settings.langfuse_secret_key)
     os.environ.setdefault("LANGFUSE_HOST", settings.langfuse_host)
     os.environ.setdefault("ENABLE_INSTRUMENTATION", "true")
-    # We deliberately do NOT enable sensitive data in iteration-02.
+    # We deliberately do NOT enable sensitive data in the read-only iteration.
     os.environ.setdefault("ENABLE_SENSITIVE_DATA", "false")
 
     langfuse = get_client()

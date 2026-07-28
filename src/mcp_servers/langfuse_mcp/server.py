@@ -1,7 +1,7 @@
 """Tiny Langfuse-MCP server — read-only access to a Langfuse project.
 
 This is intentionally minimal — it is NOT a general-purpose Langfuse MCP. In
-iteration-03 it exists so the Quality steward has a stable, read-only tool
+this read-only iteration it exists so the Quality steward has a stable, read-only tool
 interface to observe LLM traces and evaluation scores (the raw material for
 quality/drift reasoning) without any ability to create, update, or delete.
 

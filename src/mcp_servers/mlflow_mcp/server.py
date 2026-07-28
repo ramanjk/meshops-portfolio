@@ -1,7 +1,7 @@
 """Tiny MLflow-MCP server — read-only access to an MLflow Model Registry.
 
 This is intentionally minimal — it is NOT a general-purpose MLflow MCP. In
-iteration-02 it exists so the Pipeline steward has a stable, read-only tool
+this read-only iteration it exists so the Pipeline steward has a stable, read-only tool
 interface to observe the model registry (registered models, versions, stage
 tags) without any ability to register, transition, or delete.
 

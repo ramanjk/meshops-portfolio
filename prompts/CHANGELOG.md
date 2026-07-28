@@ -2,7 +2,7 @@
 
 ## 1.3.0
 - Added `quality-steward.system.md` and `quality-steward.chat.md` for the
-  iteration-03 **Quality Steward** (`hello-quality`). Read-only LLMOps-quality
+  **Quality Steward** (`hello-quality`). Read-only (Iteration 1) LLMOps-quality
   persona that observes a Langfuse project (LLM traces + evaluation scores) and
   reasons about eval health and drift. Same three no-write guarantees and
   non-negotiable identity anchoring as the Inference and Pipeline Stewards;
@@ -11,7 +11,7 @@
 
 ## 1.2.0
 - Added `pipeline-steward.system.md` and `pipeline-steward.chat.md` for the
-  iteration-02 **Pipeline Steward** (`hello-pipeline`). Read-only MLOps persona
+  **Pipeline Steward** (`hello-pipeline`). Read-only (Iteration 1) MLOps persona
   that observes an MLflow Model Registry and reasons about promotion-readiness
   (`None → Staging → Production → Archived`). Same three no-write guarantees and
   non-negotiable identity anchoring as the Inference Steward; `requires_hitl`
@@ -25,5 +25,5 @@
   and a rule for "what model are you" questions.
 
 ## 1.0.0
-- Initial system prompt for `hello-inference` (iteration-01).
+- Initial system prompt for `hello-inference` (the Inference Steward, Iteration 1 read-only).
 - Read-only stance; no `proposed_actions`; `requires_hitl` forced false.

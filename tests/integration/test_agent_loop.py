@@ -1,6 +1,6 @@
 """Integration tests with the MCP layer and chat client mocked.
 
-We do NOT call Azure OpenAI in iteration-01 tests — the agent loop is
+We do NOT call Azure OpenAI in these read-only iteration tests — the agent loop is
 exercised by patching the chat client's `run` method to return a canned
 JSON string. The real LLM call is covered by manual case M-04 / M-08.
 """

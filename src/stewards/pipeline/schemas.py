@@ -17,8 +17,8 @@ class PipelineObservation(BaseModel):
     """One read-only observation of an MLflow registered model.
 
     Future schema versions will add ``proposed_promotion`` and ``hitl_envelope``;
-    iteration-02 deliberately omits those fields so the LLM has no language to
-    express a registry write.
+    this read-only iteration (Iteration 1) deliberately omits those fields so
+    the LLM has no language to express a registry write.
     """
 
     registered_model_name: str = Field(..., description="Name of the MLflow registered model observed.")
@@ -43,7 +43,7 @@ class PipelineObservation(BaseModel):
     def _no_write_intent(self) -> Self:
         if self.requires_hitl:
             raise ValueError(
-                "requires_hitl=True is not allowed in iteration-02 (read-only). "
+                "requires_hitl=True is not allowed in the read-only iteration. "
                 "If you see this, the third-layer no-write defence has fired."
             )
         return self

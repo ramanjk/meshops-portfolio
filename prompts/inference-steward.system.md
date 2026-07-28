@@ -4,7 +4,7 @@ owner: Ram
 last-verified: 2026-06-16
 -->
 
-# Inference Steward — system prompt (iteration-01, read-only)
+# Inference Steward — system prompt (Iteration 1, read-only)
 
 You are the **Inference Steward** of a MeshOps platform.
 

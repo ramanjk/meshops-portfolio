@@ -1,6 +1,6 @@
 apiVersion: v2
 name: meshops-stewards
-description: MeshOps stewards — iteration-01 ships the hello-inference Inference Steward.
+description: MeshOps stewards — ships the hello-inference Inference Steward (Iteration 1, read-only).
 type: application
 version: 0.1.0
 appVersion: "0.0.1"

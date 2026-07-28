@@ -17,8 +17,8 @@ class InferenceObservation(BaseModel):
     """One read-only observation of a KAITO Workspace.
 
     Future schema versions will add ``proposed_actions`` and ``hitl_envelope``;
-    iteration-01 deliberately omits those fields so the LLM has no language
-    to express a write.
+    this read-only iteration (Iteration 1) deliberately omits those fields so
+    the LLM has no language to express a write.
     """
 
     workspace_name: str = Field(..., description="Name of the KAITO Workspace observed.")
@@ -34,7 +34,7 @@ class InferenceObservation(BaseModel):
     def _no_write_intent(self) -> Self:
         if self.requires_hitl:
             raise ValueError(
-                "requires_hitl=True is not allowed in iteration-01 (read-only). "
+                "requires_hitl=True is not allowed in the read-only iteration. "
                 "If you see this, the third-layer no-write defence has fired."
             )
         return self
