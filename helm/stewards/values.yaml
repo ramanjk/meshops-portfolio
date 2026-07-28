@@ -54,6 +54,17 @@ serviceAccount:
 writeEnabled: false
 # The single namespace the steward's executor may mutate.
 writeNamespace: meshops-workloads
+# HITL approval channel (ADR-0011, pluggable on the same gate + executor + audit):
+#   "chat"      -> synchronous Approve/Reject in the chat UI (default).
+#   "github_pr" -> the steward opens a PR per proposal; MERGE = approve, CLOSE =
+#                  reject. Requires writeApprovalChannel=github_pr + github.* set,
+#                  and a GH_TOKEN (repo scope) available to the pod for the gh CLI.
+writeApprovalChannel: chat
+github:
+  repo: ""                # owner/repo proposal PRs are opened against
+  baseBranch: main
+  proposalsDir: hitl-proposals
+  pollSeconds: 20
 
 keyVault:
   name: ""                # ${KV_NAME}, filled at helm install time

@@ -91,3 +91,20 @@
 | 3 | `helm template ... ` (flag off) | No `writer` Role, no `WRITE_ENABLED` env, no gated-write persona. |
 
 **Pass:** with the flag off the steward is byte-for-byte the read-only build.
+
+---
+
+## TC-W8 — GitHub-PR approval channel (merge = approve, close = reject)
+
+*Preconditions for this case: `WRITE_APPROVAL_CHANNEL=github_pr`, `GITHUB_REPO=ramanjk/meshops-portfolio` (+ optional `GITHUB_BASE_BRANCH`, `GITHUB_PROPOSALS_DIR`), and a `GH_TOKEN` (repo scope) in the pod/process env so the `gh` CLI can act. In-cluster: `helm upgrade ... --set writeEnabled=true --set writeApprovalChannel=github_pr --set github.repo=ramanjk/meshops-portfolio` and create the `github-token` Secret.*
+
+| Step | Action | Expected |
+|---|---|---|
+| 1 | Ask: *"create a test pod in meshops-workloads"* | Steward returns a proposal; the chat card shows a **"Review & merge PR to approve"** link (no Approve/Reject buttons). |
+| 2 | Open the linked PR on GitHub | A new PR on branch `hitl/pw_…` with the file `hitl-proposals/pw_….md`; body contains the **dry-run preview** + proposal JSON + the merge=approve / close=reject note. |
+| 3 | `kubectl get pods -n meshops-workloads` | The pod is **absent** — the PR is only the approval signal. |
+| 4 | **Merge** the PR | Within `github.pollSeconds` (or after `curl -XPOST .../reconcile`) the pod is created; logs show `reconciled pw_… -> executed` and an `AUDIT executed` line with `approver=<your-github-login>`. |
+| 5 | Repeat steps 1–2 for a second proposal, then **Close** that PR unmerged | On next poll/`/reconcile` the proposal is `REJECTED`; `kubectl` shows nothing created; audit records `rejected`. |
+| 6 | Merge the *same* (already-merged) PR context again / re-run `/reconcile` | Idempotent: no second apply, no error. |
+
+**Pass:** the write happens only after the PR is **merged** (never on open), a close rejects it, and the in-cluster mutation is still performed by the steward's bounded executor — the PR never carries cluster credentials.

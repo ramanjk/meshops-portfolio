@@ -111,3 +111,28 @@ class Settings(BaseSettings):
         "kubectl",
         description="Path to kubectl used by the deterministic write executor.",
     )
+    # Which HITL approval channel resolves proposals (ADR-0011: pluggable
+    # channels on one shared gate + executor + audit).
+    #   "chat"       -> interactive Approve/Reject in the chat UI (synchronous).
+    #   "github_pr"  -> the steward opens a PR per proposal; MERGE = approve,
+    #                   CLOSE = reject. The same in-process executor still
+    #                   applies the write under the same bounded RBAC.
+    write_approval_channel: str = Field(
+        "chat",
+        description="HITL approval channel: 'chat' or 'github_pr'.",
+    )
+    # --- github_pr channel settings (ignored unless channel == github_pr) ---
+    github_repo: str = Field(
+        "",
+        description="owner/repo the steward opens proposal PRs against (uses the gh CLI).",
+    )
+    github_base_branch: str = Field(
+        "main", description="Base branch proposal PRs target."
+    )
+    github_proposals_dir: str = Field(
+        "hitl-proposals",
+        description="Repo directory the proposal file is written to on the PR branch.",
+    )
+    github_poll_seconds: int = Field(
+        20, ge=5, description="How often the reconcile loop polls open proposal PRs."
+    )

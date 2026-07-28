@@ -89,6 +89,11 @@ class WriteProposal(BaseModel):
     outcome: str | None = None
     session_id: str | None = None
     approver: str | None = None
+    # Set by an async approval channel (e.g. github_pr): the external artifact
+    # that carries the human decision. external_ref is a URL for display;
+    # external_id is the machine key the channel polls (e.g. PR number).
+    external_ref: str | None = None
+    external_id: str | None = None
 
     @model_validator(mode="after")
     def _shape_matches_operation(self) -> Self:
@@ -318,6 +323,23 @@ class WriteGate:
             p for p in self._store.values()
             if p.session_id == session_id and p.status == ProposalStatus.PENDING and not self._expired(p)
         ]
+
+    def pending_all(self) -> list[WriteProposal]:
+        """All still-approvable proposals, regardless of session.
+
+        Used by async approval channels (e.g. github_pr) to reconcile external
+        decisions (PR merged/closed) against the gate. Expiry is applied lazily.
+        """
+        out: list[WriteProposal] = []
+        for p in list(self._store.values()):
+            if p.status != ProposalStatus.PENDING:
+                continue
+            if self._expired(p):
+                p.status = ProposalStatus.EXPIRED
+                self._audit_event("expired", p)
+                continue
+            out.append(p)
+        return out
 
     # -- internals ------------------------------------------------------------
     def _require_pending(self, token: str) -> WriteProposal:

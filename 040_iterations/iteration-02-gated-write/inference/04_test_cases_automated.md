@@ -6,7 +6,7 @@
 
 ```bash
 uv run pytest tests/unit/test_write_gate.py -q      # just the gate
-uv run pytest -q                                     # full suite -> 61 passed
+uv run pytest -q                                     # full suite -> 68 passed
 ```
 
 ## What each test locks down
@@ -28,6 +28,20 @@ uv run pytest -q                                     # full suite -> 61 passed
 | `test_propose_write_tool_records_and_returns_pending` | the LLM tool records a proposal and returns a `PENDING` string. |
 | `test_propose_write_tool_reports_denied_namespace` | the LLM tool returns `DENIED` for an out-of-scope namespace. |
 
+### GitHub-PR approval channel — [`tests/unit/test_approval_channels.py`](../../../tests/unit/test_approval_channels.py)
+
+*Uses a `FakeGitHubClient` (in-memory PRs; no network, no `gh`). The real `GhCliClient` (`gh api`) path is manual/integration only.*
+
+| Test | Invariant |
+|---|---|
+| `test_chat_channel_is_noop` | the chat channel publishes nothing and syncs nothing (the endpoints drive the gate). |
+| `test_open_publishes_pr_and_records_ref` | `open` creates branch `hitl/<id>` + proposal file, opens a PR, records `external_ref`/`external_id`; PR body carries the dry-run preview. |
+| `test_merge_reconciles_to_executed` | a **merged** PR → `sync` calls `gate.approve(merger_login)` → `EXECUTED`, executor ran once. |
+| `test_close_reconciles_to_rejected` | a **closed-unmerged** PR → `sync` calls `gate.reject` → `REJECTED`, nothing applied. |
+| `test_sync_is_idempotent` | re-syncing a resolved proposal is a no-op; `apply` ran exactly once. |
+| `test_open_still_pending_is_not_synced_until_decided` | an open PR yields no decision; proposal stays `PENDING`. |
+| `test_pending_all_skips_proposals_without_external_id` | a never-published proposal is ignored by `sync`. |
+
 ## The two load-bearing assertions
 
 1. **No execution without approval** — `test_nothing_executes_without_approval` + `test_approve_executes_once_then_single_use` together prove `apply` runs *iff* a human `approve` happened, exactly once.
@@ -36,4 +50,5 @@ uv run pytest -q                                     # full suite -> 61 passed
 ## Coverage notes / gaps
 
 - The `KubectlApplier` subprocess path is intentionally **not** unit-tested against a real cluster (it would need a live kube context). Its argv construction is simple and covered by manual TC-W1..W5. A future integration test could run it against `kind` with the bounded Role applied.
-- Endpoint wiring (`/approve`, `/reject`, approval cards) is exercised by the manual suite (`03_test_cases_manual.md`); a FastAPI `TestClient` test is a reasonable follow-up.
+- The `GhCliClient` (`gh api`) subprocess path is likewise **not** unit-tested — the channel logic is covered via `FakeGitHubClient`, and the live `gh` path is exercised by manual TC-W8.
+- Endpoint wiring (`/approve`, `/reject`, `/reconcile`, approval cards) is exercised by the manual suite (`03_test_cases_manual.md`); a FastAPI `TestClient` test is a reasonable follow-up.

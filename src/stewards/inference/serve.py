@@ -13,6 +13,8 @@ Endpoints:
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import uuid
 from contextlib import AsyncExitStack
@@ -26,11 +28,16 @@ from opentelemetry.trace.span import format_trace_id
 from pydantic import BaseModel
 
 from . import agent as agent_module
+from .approval_channels import ApprovalChannel, build_channel
 from .settings import Settings
 from .write_gate import KubectlApplier, WriteGate
 from .write_tool import build_propose_write_tool, current_session_id
 
 LOG = logging.getLogger("meshops.hello-inference.chat")
+
+# The chat channel can approve in seconds; an async PR review may take hours or
+# days, so the gate TTL must outlive human review. Bump it for the PR channel.
+_PR_CHANNEL_MIN_TTL_SECONDS = 7 * 24 * 3600
 
 
 class ChatRequest(BaseModel):
@@ -43,8 +50,8 @@ class ChatReply(BaseModel):
     session_id: str
     trace_id: str | None = None
     # When the steward proposes a write this turn, the pending proposal(s) are
-    # surfaced here so the UI can render Approve/Reject controls. Empty/None in
-    # the read-only path.
+    # surfaced here so the UI can render Approve/Reject controls (chat channel)
+    # or a "Review PR" link (github_pr channel). Empty/None in the read-only path.
     pending: list[dict] | None = None
 
 
@@ -113,14 +120,24 @@ _INDEX_HTML = """<!doctype html>
     const pre = document.createElement('pre');
     pre.style.cssText = 'white-space:pre-wrap;font-size:.8rem;opacity:.85;margin:.4rem 0;';
     pre.textContent = p.preview || '(no preview)';
-    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:.5rem;';
-    const ok = document.createElement('button'); ok.textContent = 'Approve';
-    const no = document.createElement('button'); no.textContent = 'Reject';
-    no.style.background = '#dc2626';
-    ok.onclick = () => decide('/approve', p.id, d);
-    no.onclick = () => decide('/reject', p.id, d);
-    row.appendChild(ok); row.appendChild(no);
-    d.appendChild(intent); d.appendChild(pre); d.appendChild(row);
+    d.appendChild(intent); d.appendChild(pre);
+    if (p.external_ref) {
+      // Async channel (github_pr): the decision happens by merging/closing the PR.
+      const link = document.createElement('a');
+      link.href = p.external_ref; link.target = '_blank'; link.rel = 'noopener';
+      link.textContent = 'Review & merge PR to approve (close to reject) →';
+      link.style.cssText = 'color:#2563eb;font-weight:600;';
+      d.appendChild(link);
+    } else {
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:.5rem;';
+      const ok = document.createElement('button'); ok.textContent = 'Approve';
+      const no = document.createElement('button'); no.textContent = 'Reject';
+      no.style.background = '#dc2626';
+      ok.onclick = () => decide('/approve', p.id, d);
+      no.onclick = () => decide('/reject', p.id, d);
+      row.appendChild(ok); row.appendChild(no);
+      d.appendChild(row);
+    }
     log.appendChild(d); log.scrollTop = log.scrollHeight;
   }
   form.addEventListener('submit', async (e) => {
@@ -190,17 +207,34 @@ def _build_app(settings: Settings) -> FastAPI:
         # load the write-capable persona and hand the agent the single, NON-
         # mutating propose_write tool. Off = byte-for-byte the read-only steward.
         if settings.write_enabled:
+            # An async approval channel (github_pr) may take hours/days, so the
+            # gate must not expire the proposal before the human decides.
+            ttl = settings.write_proposal_ttl_seconds
+            if settings.write_approval_channel == "github_pr":
+                ttl = max(ttl, _PR_CHANNEL_MIN_TTL_SECONDS)
             gate = WriteGate(
                 KubectlApplier(kubectl_binary=settings.kubectl_binary),
                 allowed_namespace=settings.write_namespace,
-                ttl_seconds=settings.write_proposal_ttl_seconds,
+                ttl_seconds=ttl,
             )
             state["gate"] = gate
+            channel = build_channel(settings, gate)
+            state["channel"] = channel
             tools.append(build_propose_write_tool(gate, settings.write_namespace))
             persona = agent_module._read_prompt("inference-steward.gated-write.chat.md")
-            LOG.info("[chat] WRITE-ENABLED: HITL gate armed for ns/%s", settings.write_namespace)
+            LOG.info(
+                "[chat] WRITE-ENABLED: HITL gate armed for ns/%s via '%s' channel",
+                settings.write_namespace, channel.name,
+            )
+            # For an async channel, poll the external source (PR state) so merges
+            # made outside the chat UI are reconciled into gate decisions.
+            if channel.name == "github_pr":
+                state["poll_task"] = asyncio.create_task(
+                    _poll_loop(channel, gate, settings.github_poll_seconds)
+                )
         else:
             state["gate"] = None
+            state["channel"] = None
             persona = agent_module._read_prompt("inference-steward.chat.md")
 
         agent = chat.as_agent(
@@ -216,6 +250,11 @@ def _build_app(settings: Settings) -> FastAPI:
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:  # pragma: no cover - integration path
+        poll_task: asyncio.Task | None = state.get("poll_task")
+        if poll_task is not None:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poll_task
         stack: AsyncExitStack | None = state.get("stack")
         if stack is not None:
             await stack.aclose()
@@ -258,9 +297,22 @@ def _build_app(settings: Settings) -> FastAPI:
 
         pending = None
         if gate is not None:
+            channel: ApprovalChannel | None = state.get("channel")
+            proposals = gate.pending_for_session(session_id)
+            # For an async channel, publish any not-yet-published proposal (open a
+            # PR) off the event loop. The gate stays pure; the channel does I/O.
+            if channel is not None and channel.name != "chat":
+                for p in proposals:
+                    if p.external_ref is None:
+                        await asyncio.to_thread(channel.open, p)
             pending = [
-                {"id": p.id, "summary": p.human_summary(), "preview": p.preview}
-                for p in gate.pending_for_session(session_id)
+                {
+                    "id": p.id,
+                    "summary": p.human_summary(),
+                    "preview": p.preview,
+                    "external_ref": p.external_ref,
+                }
+                for p in proposals
             ] or None
         return ChatReply(
             reply=reply.strip(), session_id=session_id, trace_id=trace_hex, pending=pending
@@ -274,7 +326,43 @@ def _build_app(settings: Settings) -> FastAPI:
     async def reject_endpoint(req: DecisionRequest) -> dict[str, str]:
         return _decide(state, req, approve=False)
 
+    @app.post("/reconcile")
+    async def reconcile_endpoint() -> dict[str, Any]:
+        """Force an immediate poll of the async approval channel (PR states).
+
+        The background loop already does this on an interval; this endpoint lets
+        an operator (or a future webhook) trigger reconciliation on demand.
+        """
+        gate: WriteGate | None = state.get("gate")
+        channel: ApprovalChannel | None = state.get("channel")
+        if gate is None or channel is None or channel.name == "chat":
+            return {"status": "noop", "resolved": []}
+        changed = await asyncio.to_thread(channel.sync, gate)
+        return {
+            "status": "ok",
+            "resolved": [
+                {"id": p.id, "status": p.status.value, "outcome": p.outcome} for p in changed
+            ],
+        }
+
     return app
+
+
+async def _poll_loop(
+    channel: ApprovalChannel, gate: WriteGate, interval: int
+) -> None:  # pragma: no cover - timing loop
+    """Periodically reconcile external approval state (PR merges/closes)."""
+    LOG.info("[chat] approval poll loop started (every %ss)", interval)
+    while True:
+        try:
+            await asyncio.sleep(interval)
+            changed = await asyncio.to_thread(channel.sync, gate)
+            for p in changed:
+                LOG.info("[chat] reconciled %s -> %s via %s", p.id, p.status.value, channel.name)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - a poll error must not kill the loop
+            LOG.exception("[chat] approval poll iteration failed")
 
 
 def _decide(state: dict[str, Any], req: DecisionRequest, *, approve: bool) -> dict[str, str]:

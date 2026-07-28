@@ -353,7 +353,39 @@ rules:
 | `test_create_requires_manifest` / `_scale_requires_name_and_replicas` / `_replicas_out_of_bounds_rejected` | schema shape validation |
 | `test_propose_write_tool_*` | the LLM tool records + returns PENDING / DENIED |
 
-**What this buys you:** the safety story is regression-tested, not just asserted in prose. `pytest -q` → **61 passed** (47 read-only + 14 here).
+**What this buys you:** the safety story is regression-tested, not just asserted in prose. `pytest -q` → **68 passed** (47 read-only + 14 gate + 7 channels).
+
+---
+
+## 9. `src/stewards/inference/approval_channels.py` — pluggable HITL channels
+
+*Purpose: decouple **how a human says "yes"** from the gate. Every channel feeds the same `WriteGate.approve`/`reject`, so the same deterministic executor and the same bounded RBAC run regardless of channel. Selected by `write_approval_channel` (`chat` | `github_pr`).*
+
+```python
+class ApprovalChannel(Protocol):
+    name: str
+    def open(self, proposal: WriteProposal) -> None: ...          # publish for decision
+    def sync(self, gate: WriteGate) -> list[WriteProposal]: ...    # reconcile decisions
+
+class ChatApprovalChannel:      # synchronous: /approve,/reject drive the gate -> no-op here
+    name = "chat"
+
+class GitHubPRChannel:          # asynchronous: MERGE = approve, CLOSE = reject
+    def open(self, proposal):   # create branch + proposal file + PR; record external_ref/id
+    def sync(self, gate):       # poll each pending PR; merged -> gate.approve(merged_by),
+                                #                        closed  -> gate.reject("github-close")
+```
+
+**The GitHub-PR flow, end to end:**
+
+1. The LLM calls the non-mutating `propose_write` tool → the gate stores a **PENDING** proposal and computes its server dry-run preview (unchanged from the chat path).
+2. After `agent.run`, `serve.py` calls `channel.open(proposal)` off the event loop (`asyncio.to_thread`). `GhCliClient` shells `gh api` to: read the base-branch SHA, create branch `hitl/<id>`, PUT the proposal file (`hitl-proposals/<id>.md`, body = **dry-run preview + proposal JSON**), and open a PR. The PR URL is stored on `proposal.external_ref`; the PR number on `proposal.external_id`.
+3. A human reviews the PR. **Merge = approve; close-unmerged = reject.** No credentials for the cluster are ever handed to GitHub.
+4. A background poll loop (`github_poll_seconds`) — and an on-demand `POST /reconcile` — call `channel.sync(gate)`, which reads each open proposal PR's state and drives `gate.approve(id, merged_by)` or `gate.reject(id, "github-close")`. The **in-process** `KubectlApplier` then applies the write under the bounded ServiceAccount, exactly as in the chat path.
+
+**Why the PR is only the *signal*, not the actuator:** merging a PR does **not** run any CI `kubectl apply`. The steward's own deterministic executor performs the mutation under its namespaced, write-but-bounded Role. So the RBAC backstop is identical whether a human clicked *Approve* in chat or merged a PR — the approval channel changes *who is asked and how*, never *what is allowed*.
+
+**Testability:** `GitHubClient` is a protocol; the real `GhCliClient` uses `gh api`, and tests inject a `FakeGitHubClient` (no network, no `gh`). Proposal TTL is auto-bumped to ≥ 7 days for the PR channel (async review outlives the chat channel's minutes).
 
 ---
 
@@ -361,24 +393,26 @@ rules:
 
 | File | Purpose |
 |---|---|
-| `src/stewards/inference/settings.py` | `write_enabled` capability flag + write bounds |
-| `src/stewards/inference/write_gate.py` | proposal schema, gate (single-use/TTL), applier, audit |
+| `src/stewards/inference/settings.py` | `write_enabled` capability flag + write bounds + `write_approval_channel` / `github_*` |
+| `src/stewards/inference/write_gate.py` | proposal schema, gate (single-use/TTL), applier, audit, `pending_all()` |
 | `src/stewards/inference/write_tool.py` | `propose_write` — the one non-mutating LLM tool |
-| `src/stewards/inference/serve.py` | flag-gated wiring, `/approve` + `/reject`, approval cards |
+| `src/stewards/inference/approval_channels.py` | pluggable HITL channels (chat no-op + GitHub-PR) on the shared gate |
+| `src/stewards/inference/serve.py` | flag-gated wiring, `/approve` + `/reject`, `/reconcile`, poll loop, approval cards / PR links |
 | `prompts/inference-steward.gated-write.chat.md` | propose-only persona (Iteration 2) |
-| `helm/stewards/values.yaml`, `deployment.yaml` | deploy-time flag, env, persona ConfigMap |
+| `helm/stewards/values.yaml`, `deployment.yaml` | deploy-time flag, env (incl. `GH_TOKEN`), persona ConfigMap |
 | `helm/stewards/templates/write-rbac.yaml` | namespaced write-but-bounded Role/RoleBinding |
 | `tests/unit/test_write_gate.py` | 14 tests proving the gate invariants |
+| `tests/unit/test_approval_channels.py` | 7 tests: PR open/merge/close/idempotency with a fake GitHub |
 
 ## Limitations / next
 
-- **Approval identity** is a fixed `"operator (chat)"` string — real auth (Entra) is future work; the audit field already exists.
+- **Approval identity** is `"operator (chat)"` for the chat channel; the GitHub-PR channel records the **PR merger's login** as the approver. Real auth (Entra) on the chat channel is future work; the audit field already exists.
 - **Audit sink** is the logging default; the immutable Azure Storage sink is a follow-up (interface is ready).
-- **Approval channels:** only the interactive chat channel is implemented; GitHub-PR / Slack are designed in ADR-0011.
-- **kubectl** must be present in the image (the read-only steward already ships it for aks-mcp's kubectl component).
+- **Approval channels:** the interactive **chat** and asynchronous **GitHub-PR** channels are implemented; Slack remains designed in ADR-0011. PR-state detection is poll-based; a GitHub webhook driving `/reconcile` is future work.
+- **kubectl** must be present in the image (the read-only steward already ships it for aks-mcp's kubectl component). The `gh` CLI + a `GH_TOKEN` (repo scope) are required in the pod only for the GitHub-PR channel.
 
 ## Sources
 
-- Repo: `src/stewards/inference/{settings,write_gate,write_tool,serve}.py`, `prompts/inference-steward.gated-write.chat.md`, `helm/stewards/{values.yaml,templates/deployment.yaml,templates/write-rbac.yaml}`, `tests/unit/test_write_gate.py`.
+- Repo: `src/stewards/inference/{settings,write_gate,write_tool,approval_channels,serve}.py`, `prompts/inference-steward.gated-write.chat.md`, `helm/stewards/{values.yaml,templates/deployment.yaml,templates/write-rbac.yaml}`, `tests/unit/{test_write_gate,test_approval_channels}.py`.
 - [ADR-0011 — no autonomous actuation](../../../035_others/decisions/0011-no-autonomous-actuation-hitl.md); [ADR-0004 — MCP as the tool layer](../../../035_others/decisions/0004-mcp-as-tool-layer.md).
 - [Kubernetes RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/); [kubectl server-side dry-run](https://kubernetes.io/docs/reference/using-api/server-side-apply/).

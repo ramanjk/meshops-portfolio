@@ -66,6 +66,33 @@ helm upgrade hello-inference helm/stewards --namespace meshops --reuse-values \
 
 This removes the `writer` Role/RoleBinding, drops `WRITE_ENABLED`, and reloads the read-only persona. The steward returns to its Iteration-1 behaviour.
 
+## 4b. (Optional) Use the GitHub-PR approval channel
+
+Instead of the synchronous chat card, the steward can open a **PR per proposal** — **merge = approve, close = reject** (ADR-0011). The write is still applied in-process by the steward's bounded executor; the PR is only the approval signal and human-readable audit artifact.
+
+```bash
+# 1. Give the pod a GitHub PAT (repo scope) for the gh CLI:
+kubectl -n meshops create secret generic github-token --from-literal=token="$GH_PAT"
+
+# 2. Enable write + select the PR channel:
+helm upgrade hello-inference helm/stewards --namespace meshops --reuse-values \
+  --set writeEnabled=true \
+  --set writeApprovalChannel=github_pr \
+  --set github.repo=ramanjk/meshops-portfolio \
+  --set github.baseBranch=main \
+  --set github.proposalsDir=hitl-proposals \
+  --set github.pollSeconds=20
+```
+
+What this changes vs the chat channel:
+
+1. `WRITE_APPROVAL_CHANNEL=github_pr` + `GITHUB_*` env + `GH_TOKEN` (from the `github-token` Secret) are set on the Deployment.
+2. On each proposal the steward creates branch `hitl/pw_…`, commits `hitl-proposals/pw_….md` (body = dry-run preview + proposal JSON), and opens a PR; the chat card shows a **"Review PR"** link instead of Approve/Reject buttons.
+3. A background poll loop (`github.pollSeconds`) reconciles PR state into gate decisions; you can force it with `curl -XPOST http://<chat>/reconcile`.
+4. The proposal TTL is auto-extended to ≥ 7 days so an async review never expires the proposal mid-flight.
+
+Run manual **TC-W8** to validate the full merge→create / close→reject flow. Roll back to the chat channel with `--set writeApprovalChannel=chat` (or to read-only with `--set writeEnabled=false`).
+
 ## 5. Cost hygiene (unchanged)
 
 Same as read-only — when done demoing:
@@ -77,6 +104,6 @@ az aks stop --name aks-meshops-lab --resource-group <rg>
 
 ## Notes / caveats
 
-- **Approver identity** is recorded as `operator (chat)` — the interactive channel has no auth yet. Do not expose the chat LoadBalancer to the internet with write enabled; restrict `chat.service.loadBalancerSourceRanges` to your egress IPs.
+- **Approver identity** is recorded as `operator (chat)` — the interactive channel has no auth yet. Do not expose the chat LoadBalancer to the internet with write enabled; restrict `chat.service.loadBalancerSourceRanges` to your egress IPs. On the **GitHub-PR channel** the approver is recorded as the **PR merger's GitHub login** (real identity).
 - **Audit** currently goes to pod logs (`AUDIT …` JSON lines). The immutable Azure Storage sink (ADR-0011) is a follow-up; until then, ship pod logs to a retained log store if you need durable audit.
 - **KAITO workspace scaling** is a `patch` on `spec.resource.count` (operation `patch`), not `kubectl scale`; the gate supports both `patch` and `scale`.

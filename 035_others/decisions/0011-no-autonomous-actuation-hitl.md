@@ -49,6 +49,8 @@ The gate is built from five load-bearing parts:
 
 All channels feed the *same* executor and the *same* immutable audit. The interactive chat card is therefore **not** a competing "bespoke operator console" — it is one approval channel on a shared gate.
 
+> **Implementation status (Inference steward).** The **chat** and **GitHub PR** channels are both implemented on the shared gate (`src/stewards/inference/approval_channels.py`), selected by `write_approval_channel` (`chat` | `github_pr`). In the PR channel the steward opens one PR per proposal (body = dry-run preview + proposal JSON); **merging the PR = approve, closing it unmerged = reject**. Detection is a poll loop (`sync`) plus an on-demand `POST /reconcile` (webhooks are future work). Crucially, the PR is only the *approval signal* — the in-process deterministic executor still applies the write under the same namespaced, write-but-bounded ServiceAccount, so the RBAC backstop is unchanged whether a human clicks Approve or merges a PR. Slack remains designed-not-built.
+
 **Capability flag.** Write scope is off by default (`write_enabled=false`), so a steward is byte-for-byte its Iteration-1 read-only self until write is deliberately enabled. Enabling write never removes the gate — it only makes the gate reachable.
 
 ## Alternatives considered

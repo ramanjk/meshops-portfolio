@@ -94,6 +94,25 @@ spec:
               value: "true"
             - name: WRITE_NAMESPACE
               value: {{ .Values.writeNamespace | quote }}
+            - name: WRITE_APPROVAL_CHANNEL
+              value: {{ .Values.writeApprovalChannel | quote }}
+{{- if eq .Values.writeApprovalChannel "github_pr" }}
+            # github_pr channel: MERGE=approve / CLOSE=reject. The gh CLI needs a
+            # PAT (repo scope) — provide it via a Secret named 'github-token'.
+            - name: GITHUB_REPO
+              value: {{ .Values.github.repo | quote }}
+            - name: GITHUB_BASE_BRANCH
+              value: {{ .Values.github.baseBranch | quote }}
+            - name: GITHUB_PROPOSALS_DIR
+              value: {{ .Values.github.proposalsDir | quote }}
+            - name: GITHUB_POLL_SECONDS
+              value: {{ .Values.github.pollSeconds | quote }}
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: token
+{{- end }}
 {{- end }}
             # uv needs a writable cache dir; root FS is read-only, so point it
             # at the tmp emptyDir volume mounted below.
