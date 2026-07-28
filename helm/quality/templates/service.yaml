@@ -1,0 +1,33 @@
+{{- if .Values.chat.enabled }}
+{{- $svc := .Values.chat.service | default dict }}
+{{- $type := $svc.type | default "ClusterIP" }}
+# Service fronting the steward's interactive chat API.
+#   type=LoadBalancer -> open http://<EXTERNAL-IP>:{{ .Values.chat.port }}/ once assigned:
+#     kubectl get svc -n {{ .Values.namespace }} hello-quality-chat -w
+#   type=ClusterIP    -> port-forward:
+#     kubectl port-forward -n {{ .Values.namespace }} svc/hello-quality-chat {{ .Values.chat.port }}:{{ .Values.chat.port }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-quality-chat
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: hello-quality
+    app.kubernetes.io/component: steward-chat
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $type }}
+  {{- if and (eq $type "LoadBalancer") $svc.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $svc.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: hello-quality
+  ports:
+    - name: http
+      port: {{ .Values.chat.port }}
+      targetPort: http
+{{- end }}

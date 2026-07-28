@@ -1,0 +1,6 @@
+apiVersion: v2
+name: meshops-quality
+description: MeshOps Quality Steward — iteration-03 ships the hello-quality steward (read-only Langfuse traces/scores observer).
+type: application
+version: 0.1.0
+appVersion: "0.0.1"

@@ -1,0 +1,60 @@
+image:
+  repository: ""          # ${ACR_LOGIN_SERVER}/meshops/hello-quality
+  tag: "0.0.1"
+  pullPolicy: IfNotPresent
+
+namespace: meshops
+
+# Run model for the Deployment. 0 = one-shot (pod completes and, under a
+# Deployment, restarts). A positive value runs the steward as a long-lived loop
+# so the Deployment pod stays Running and re-runs an observe cycle on this
+# interval. Ignored when chat.enabled is true.
+runIntervalSeconds: 0
+
+# Interactive chat interface. When enabled, the pod serves the steward's persona
+# over HTTP (with a minimal web UI at /) instead of running observe cycles.
+chat:
+  enabled: true
+  port: 8080
+  service:
+    # ClusterIP (port-forward only) or LoadBalancer (Azure public LB).
+    type: LoadBalancer
+    annotations: {}
+    # SECURITY: the chat endpoint has no auth. When type=LoadBalancer, restrict
+    # who can reach the public IP by listing CIDRs here. Empty list = open.
+    loadBalancerSourceRanges: []
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    tls:
+      enabled: false
+      secretName: ""
+
+serviceAccount:
+  # The Quality steward needs Workload Identity ONLY to authenticate to Azure
+  # OpenAI and to pull Langfuse secrets from Key Vault (CSI). It performs NO
+  # Kubernetes API reads, so this chart intentionally ships NO ClusterRole/RBAC.
+  name: hello-quality
+  clientId: ""
+
+keyVault:
+  name: ""                # ${KV_NAME}, filled at helm install time
+  tenantId: ""
+
+env:
+  azureOpenAiEndpoint: ""
+  azureOpenAiChatDeploymentName: "gpt-4.1"
+  # Langfuse is BOTH the OTel export target and the Quality steward's substrate
+  # (it reads traces + scores from the same project it emits its spans to).
+  langfuseHost: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+  traceSampleLimit: 50
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi

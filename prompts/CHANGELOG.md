@@ -1,5 +1,14 @@
 # Prompt CHANGELOG
 
+## 1.3.0
+- Added `quality-steward.system.md` and `quality-steward.chat.md` for the
+  iteration-03 **Quality Steward** (`hello-quality`). Read-only LLMOps-quality
+  persona that observes a Langfuse project (LLM traces + evaluation scores) and
+  reasons about eval health and drift. Same three no-write guarantees and
+  non-negotiable identity anchoring as the Inference and Pipeline Stewards;
+  `requires_hitl` forced false and `drift_suspected` explicitly scoped as a
+  read-only signal (not an action).
+
 ## 1.2.0
 - Added `pipeline-steward.system.md` and `pipeline-steward.chat.md` for the
   iteration-02 **Pipeline Steward** (`hello-pipeline`). Read-only MLOps persona
