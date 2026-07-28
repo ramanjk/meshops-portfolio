@@ -21,7 +21,7 @@ MeshOps grows along **two independent axes**, and it's important not to conflate
 
 | Steward ↓ / Iteration → | **1 · read-only** | **2 · gated write (HITL)** | **3+ · broader** |
 |---|---|---|---|
-| **Inference** | ✅ [`inference/`](inference/) | ⬜ | ⬜ |
+| **Inference** | ✅ [`inference/`](inference/) | 🚧 [gated-write](../iteration-02-gated-write/inference/) | ⬜ |
 | **Pipeline** | ✅ [`pipeline/`](pipeline/) | ⬜ (natural first writer: propose a registry promotion) | ⬜ |
 | **Quality** | ✅ [`quality/`](quality/) | ⬜ (propose a prompt-version PR) | ⬜ |
 | **SRE** | ⬜ | ⬜ | ⬜ |
