@@ -55,51 +55,117 @@ After 11 years in Kubernetes (Kubestronaut 🚀), this is my deliberate stretch 
 <<<
 
 ============================================================
-POST #2 — STEWARD #1: THE INFERENCE STEWARD
+POST #2 — STEWARD #1: THE INFERENCE STEWARD (Iteration 1 · read-only)
 ============================================================
+Media: attach a short screen-capture GIF of the chat UI answering 2–3 of the
+questions below, OR reuse 040_iterations/assets/meshops-arch.png. A real
+terminal/chat screenshot outperforms the diagram here — show it working.
 >>>
 𝗠𝗲𝗲𝘁 𝘁𝗵𝗲 𝗳𝗶𝗿𝘀𝘁 𝗠𝗲𝘀𝗵𝗢𝗽𝘀 𝘀𝘁𝗲𝘄𝗮𝗿𝗱: 𝘁𝗵𝗲 𝗜𝗻𝗳𝗲𝗿𝗲𝗻𝗰𝗲 𝗦𝘁𝗲𝘄𝗮𝗿𝗱. 🛰️
 
 In my last post I introduced 𝗠𝗲𝘀𝗵𝗢𝗽𝘀 — a mesh of read-only AI agents that operate an LLM platform on AKS, one per ops concern.
 
-Here's steward #1 👇
+Here's steward #1, live on the cluster 👇
 
 ━━━━━━━━━━━━━━━━━━━━
 
 𝗪𝗵𝗮𝘁 𝗶𝘁 𝗱𝗼𝗲𝘀
 
-The Inference Steward watches the 𝘀𝗲𝗿𝘃𝗶𝗻𝗴 side of the platform — the live model behind a KAITO Workspace on AKS.
+The Inference Steward watches the 𝘀𝗲𝗿𝘃𝗶𝗻𝗴 side of the platform — a live SLM (Phi-4-mini) behind a 𝗞𝗔𝗜𝗧𝗢 𝗪𝗼𝗿𝗸𝘀𝗽𝗮𝗰𝗲 on AKS, on a real T4 GPU node.
 
-✅  Is the workspace healthy?
-✅  How many replicas?
-✅  Is the model actually answering?
-
-It reasons over that live state and reports what it sees.
+It observes → reasons → reports. No canned answers — every reply is grounded in live cluster state.
 
 ━━━━━━━━━━━━━━━━━━━━
 
-𝗪𝗵𝗮𝘁 𝗺𝗮𝗸𝗲𝘀 𝗶𝘁 𝗶𝗻𝘁𝗲𝗿𝗲𝘀𝘁𝗶𝗻𝗴
+𝗜 𝗮𝗰𝘁𝘂𝗮𝗹𝗹𝘆 𝗶𝗻𝘁𝗲𝗿𝘃𝗶𝗲𝘄𝗲𝗱 𝗶𝘁 — 𝗿𝗲𝗮𝗹 𝗾𝘂𝗲𝘀𝘁𝗶𝗼𝗻𝘀, 𝗹𝗶𝘃𝗲 𝗮𝗻𝘀𝘄𝗲𝗿𝘀 🎙️
 
-🤖  a real 𝗮𝗴𝗲𝗻𝘁 — observe → reason → report, with tools over MCP. Not a chatbot.
-📡  grounded in 𝗹𝗶𝘃𝗲 𝗰𝗹𝘂𝘀𝘁𝗲𝗿 𝘀𝘁𝗮𝘁𝗲, not a canned demo.
-🔒  𝗿𝗲𝗮𝗱-𝗼𝗻𝗹𝘆, 𝗲𝗻𝗳𝗼𝗿𝗰𝗲𝗱 𝟯 𝘄𝗮𝘆𝘀:
-     ▸ tools expose only read verbs
+🗨️  "𝘞𝘩𝘢𝘵 𝘦𝘯𝘨𝘪𝘯𝘦 𝘢𝘯𝘥 𝘱𝘳𝘦𝘴𝘦𝘵 𝘪𝘴 𝘴𝘦𝘳𝘷𝘪𝘯𝘨 𝘵𝘩𝘦 𝘮𝘰𝘥𝘦𝘭?"
+      → phi-4-mini-instruct on Standard_NC4as_T4_v3, 128k context.
+
+🗨️  "𝘚𝘩𝘰𝘸 𝘵𝘩𝘦 𝘞𝘰𝘳𝘬𝘴𝘱𝘢𝘤𝘦 𝘤𝘰𝘯𝘥𝘪𝘵𝘪𝘰𝘯𝘴."
+      → NodesReady ✓ ResourceReady ✓ InferenceReady ✓ — State: Ready.
+
+🗨️  "𝘏𝘰𝘸 𝘮𝘢𝘯𝘺 𝘳𝘦𝘱𝘭𝘪𝘤𝘢𝘴 𝘢𝘳𝘦 𝘤𝘰𝘯𝘧𝘪𝘨𝘶𝘳𝘦𝘥 𝘷𝘴 𝘳𝘦𝘢𝘥𝘺?"
+      → 1 configured, 1 pod ready — cross-checked against pod status.
+
+🗨️  "𝘐𝘴 𝘵𝘩𝘦 𝘮𝘰𝘥𝘦𝘭 𝘩𝘦𝘢𝘭𝘵𝘩𝘺 𝘳𝘪𝘨𝘩𝘵 𝘯𝘰𝘸?"
+      → Yes — cites the workspace name + namespace, not a vibe.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗧𝗵𝗲 𝗽𝗮𝗿𝘁 𝗜'𝗺 𝗽𝗿𝗼𝘂𝗱𝗲𝘀𝘁 𝗼𝗳 — 𝗶𝘁 𝗿𝗲𝗳𝘂𝘀𝗲𝘀 𝘁𝗼 𝘄𝗿𝗶𝘁𝗲
+
+🔒  𝗥𝗲𝗮𝗱-𝗼𝗻𝗹𝘆, 𝗲𝗻𝗳𝗼𝗿𝗰𝗲𝗱 𝟯 𝘄𝗮𝘆𝘀:
+     ▸ tools expose only read verbs (aks-mcp --access-level=readonly)
      ▸ the persona declines any write
      ▸ the output schema hard-fails on a change request
 
-Ask it to "promote a model" and it politely refuses. ✋
+🗨️  "𝘚𝘤𝘢𝘭𝘦 𝘵𝘩𝘦 𝘮𝘰𝘥𝘦𝘭 / 𝘱𝘳𝘰𝘮𝘰𝘵𝘦 𝘢 𝘷𝘦𝘳𝘴𝘪𝘰𝘯."
+      → politely refuses. Autonomy stops at the read layer. ✋
 
 ━━━━━━━━━━━━━━━━━━━━
 
 𝗪𝗵𝘆 𝘁𝗵𝗮𝘁 𝗺𝗮𝘁𝘁𝗲𝗿𝘀
 
-An AI agent you can trust in production is one that 𝗰𝗮𝗻'𝘁 touch it without you.
+An AI agent you can trust in production is one that 𝗰𝗮𝗻'𝘁 touch it without you. Safety isn't a disclaimer — it's built into the architecture.
 
-Safety isn't a disclaimer — it's built into the architecture.
+🛠️  𝗔𝗞𝗦 · 𝗔𝘇𝘂𝗿𝗲 𝗢𝗽𝗲𝗻𝗔𝗜 (gpt-4.1) · 𝗠𝗖𝗣 · 𝗞𝗔𝗜𝗧𝗢 · 𝗪𝗼𝗿𝗸𝗹𝗼𝗮𝗱 𝗜𝗱𝗲𝗻𝘁𝗶𝘁𝘆 · 𝗟𝗮𝗻𝗴𝗳𝘂𝘀𝗲 𝘁𝗿𝗮𝗰𝗶𝗻𝗴
 
-Next up: the 𝗣𝗶𝗽𝗲𝗹𝗶𝗻𝗲 𝗦𝘁𝗲𝘄𝗮𝗿𝗱, and how the two connect through the model registry. 👇
+Next: I let this same steward 𝗮𝗰𝘁 — but only through a human gate. That's iteration 2. 👇
 
-#LLMOps #AIAgents #Kubernetes #AKS #Azure #MCP #MLOps #PlatformEngineering
+#LLMOps #AIAgents #Kubernetes #AKS #Azure #MCP #MLOps #PlatformEngineering #KAITO
+<<<
+
+============================================================
+POST #2B — INFERENCE STEWARD, ITERATION 2 (gated write + HITL)
+============================================================
+Media: attach a screen-capture showing the chat proposing → the GitHub PR it
+opened → you merging → the steward reporting "executed". A 20–30s screen
+recording of that full round-trip is the money shot. Fallback: a 3-panel
+screenshot (proposal card / PR / "executed" reply).
+>>>
+𝗟𝗮𝘀𝘁 𝘄𝗲𝗲𝗸 𝗺𝘆 𝗔𝗜 𝘀𝘁𝗲𝘄𝗮𝗿𝗱 𝗰𝗼𝘂𝗹𝗱 𝗼𝗻𝗹𝘆 𝗹𝗼𝗼𝗸. 𝗡𝗼𝘄 𝗶𝘁 𝗰𝗮𝗻 𝗮𝗰𝘁 — 𝗯𝘂𝘁 𝗼𝗻𝗹𝘆 𝗶𝗳 𝗜 𝘀𝗮𝘆 𝘀𝗼. 🔐
+
+Iteration 1 of the Inference Steward was 𝗿𝗲𝗮𝗱-𝗼𝗻𝗹𝘆 by design. The obvious next question: can an agent 𝗰𝗵𝗮𝗻𝗴𝗲 the cluster without becoming a liability?
+
+My answer 👉 𝗦𝘁𝗲𝘄𝗮𝗿𝗱𝘀 𝗽𝗿𝗼𝗽𝗼𝘀𝗲. 𝗛𝘂𝗺𝗮𝗻𝘀 𝗱𝗶𝘀𝗽𝗼𝘀𝗲. — now with teeth.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗧𝗵𝗲 𝗴𝗮𝘁𝗲𝗱-𝘄𝗿𝗶𝘁𝗲 𝗹𝗼𝗼𝗽 (𝗛𝗜𝗧𝗟)
+
+1️⃣  You ask for a change.
+2️⃣  The steward does a 𝗱𝗿𝘆-𝗿𝘂𝗻, then 𝗽𝗿𝗼𝗽𝗼𝘀𝗲𝘀 — it never claims it happened.
+3️⃣  It opens a 𝗚𝗶𝘁𝗛𝘂𝗯 𝗣𝗥 with the exact preview + a proposal ID.
+4️⃣  𝗠𝗲𝗿𝗴𝗲 = approve. 𝗖𝗹𝗼𝘀𝗲 = reject. Nothing else counts.
+5️⃣  On merge, it executes 𝗼𝗻𝗰𝗲 and records an audit line.
+
+The approver identity? Your 𝗿𝗲𝗮𝗹 𝗚𝗶𝘁𝗛𝘂𝗯 𝗹𝗼𝗴𝗶𝗻 from the merge. No fake "type YES to confirm."
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗜 𝘁𝗲𝘀𝘁𝗲𝗱 𝘁𝗵𝗲 𝟯 𝗼𝘂𝘁𝗰𝗼𝗺𝗲𝘀 𝘁𝗵𝗮𝘁 𝗺𝗮𝘁𝘁𝗲𝗿 — 𝗹𝗶𝘃𝗲 🧪
+
+✅  𝗔𝗣𝗣𝗥𝗢𝗩𝗘 → "create a diagnostic pod"
+      Proposed → PR opened → I merged → pod created. Audit: executed by my login.
+
+🚫  𝗥𝗘𝗝𝗘𝗖𝗧 → I closed the PR
+      Steward reports "no change made." The proposal can never be replayed.
+
+🛑  𝗙𝗔𝗜𝗟-𝗖𝗟𝗢𝗦𝗘𝗗 → "scale the workspace to 2 replicas"
+      The dry-run caught it: KAITO marks resource.count 𝗶𝗺𝗺𝘂𝘁𝗮𝗯𝗹𝗲. Denied at the gate — 𝗲𝘃𝗲𝗻 𝗶𝗳 𝗜 𝗮𝗽𝗽𝗿𝗼𝘃𝗲. The system refuses an operation the platform itself forbids.
+
+That last one is my favourite. A safe agent isn't one that always succeeds — it's one that 𝗳𝗮𝗶𝗹𝘀 𝗵𝗼𝗻𝗲𝘀𝘁𝗹𝘆.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗪𝗵𝘆 𝗮 𝗚𝗶𝘁𝗛𝘂𝗯 𝗣𝗥 𝗮𝘀 𝘁𝗵𝗲 𝗮𝗽𝗽𝗿𝗼𝘃𝗮𝗹 𝗰𝗵𝗮𝗻𝗻𝗲𝗹?
+
+Because approval then requires 𝗿𝗲𝗽𝗼 𝘄𝗿𝗶𝘁𝗲 𝗮𝗰𝗰𝗲𝘀𝘀, every decision is 𝗿𝗲𝘃𝗶𝗲𝘄𝗮𝗯𝗹𝗲, and the merge leaves a permanent 𝗮𝘂𝗱𝗶𝘁 𝘁𝗿𝗮𝗶𝗹. Change management you already trust — reused for AI actuation.
+
+Same steward. Same read safety. Now a 𝗴𝗮𝘁𝗲𝗱 𝗵𝗮𝗻𝗱 — with a human on it. 👇 Pipeline & Quality stewards got the same upgrade.
+
+#LLMOps #AIAgents #Kubernetes #AKS #Azure #MCP #HumanInTheLoop #PlatformEngineering #KAITO
 <<<
 
 ============================================================
