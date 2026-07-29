@@ -104,3 +104,11 @@ spec:
     - port: metrics
       interval: 30s
       path: /metrics
+      # The DCGM exporter already emits pod/namespace/container labels for the
+      # GPU-owning workload (via the kubelet pod-resources API). Without this,
+      # Azure Managed Prometheus renames them to exported_pod/exported_namespace
+      # (the scrape target's own pod label wins), so a natural query like
+      # DCGM_FI_DEV_GPU_UTIL{namespace="meshops-workloads"} returns nothing.
+      # honorLabels keeps the exporter's labels so the model pod is queryable as
+      # pod="lab-phi-4-mini-eus2-01-0".
+      honorLabels: true
