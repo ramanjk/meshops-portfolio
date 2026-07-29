@@ -1,18 +1,29 @@
 """Interactive chat server for the hello-pipeline steward.
 
 Enabled with ``CHAT_ENABLED=true``. Serves a small HTTP API (and a minimal web
-UI) so you can talk to the Pipeline Steward's persona and exercise its read-only
-MLflow-registry tool (mlflow-mcp). This is a long-lived process, so the
-Deployment pod stays ``Running`` instead of completing/restarting.
+UI) so you can talk to the Pipeline Steward's persona and exercise its MLflow-
+registry tools (mlflow-mcp). This is a long-lived process, so the Deployment pod
+stays ``Running`` instead of completing/restarting.
+
+Read-only by default. When ``WRITE_ENABLED=true`` (Iteration 2) the steward also
+gains the single, NON-mutating ``propose_promotion`` tool and the gated-write
+persona; every actuation still passes the HITL gate (ADR-0011). The write-path
+plumbing is shared across stewards via :mod:`stewards.hitl`.
 
 Endpoints:
   GET  /            -> minimal HTML chat page
   GET  /healthz     -> liveness probe
   POST /chat        -> {"message": str, "session_id"?: str}
-                       -> {"reply": str, "session_id": str, "trace_id": str}
+                       -> {"reply": str, "session_id": str, "trace_id": str,
+                           "pending": [proposal, …] | null}
+  POST /approve     -> resolve a pending proposal (chat channel)
+  POST /reject      -> reject a pending proposal (chat channel)
+  POST /reconcile   -> force a poll of the async approval channel (github_pr)
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import uuid
 from contextlib import AsyncExitStack
@@ -23,23 +34,24 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from opentelemetry.trace import SpanKind
 from opentelemetry.trace.span import format_trace_id
-from pydantic import BaseModel
 
+from ..hitl import WriteGate, build_channel, current_session_id
+from ..hitl.channels import ApprovalChannel
+from ..hitl.serve_support import (
+    PR_CHANNEL_MIN_TTL_SECONDS,
+    PROPOSAL_JS,
+    ChatReply,
+    ChatRequest,
+    DecisionRequest,
+    decide,
+    pending_payload,
+    poll_loop,
+)
 from . import agent as agent_module
 from .settings import Settings
+from .write import MlflowApplier, build_propose_promotion_tool
 
 LOG = logging.getLogger("meshops.hello-pipeline.chat")
-
-
-class ChatRequest(BaseModel):
-    message: str
-    session_id: str | None = None
-
-
-class ChatReply(BaseModel):
-    reply: str
-    session_id: str
-    trace_id: str | None = None
 
 
 _INDEX_HTML = """<!doctype html>
@@ -64,7 +76,7 @@ _INDEX_HTML = """<!doctype html>
 </style>
 </head>
 <body>
-  <h1>🏗️ Pipeline Steward — chat <small>(read-only)</small></h1>
+  <h1>🏗️ Pipeline Steward — chat</h1>
   <div id="log"></div>
   <form id="f">
     <input id="m" autocomplete="off" placeholder="Ask about the MLflow registry, model versions, stages…" autofocus/>
@@ -83,6 +95,7 @@ _INDEX_HTML = """<!doctype html>
     d.appendChild(document.createTextNode(text));
     log.appendChild(d); log.scrollTop = log.scrollHeight;
   }
+__PROPOSAL_JS__
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const msg = input.value.trim(); if (!msg) return;
@@ -95,32 +108,32 @@ _INDEX_HTML = """<!doctype html>
       const j = await r.json();
       if (j.session_id) sessionId = j.session_id;
       add('Steward', j.reply ?? ('(error) ' + JSON.stringify(j)));
+      if (Array.isArray(j.pending)) j.pending.forEach(addProposal);
     } catch (err) { add('Steward', '(request failed) ' + err); }
     finally { btn.disabled = false; input.focus(); }
   });
 </script>
 </body>
 </html>
-"""
+""".replace("__PROPOSAL_JS__", PROPOSAL_JS)
 
 
 def _friendly_error(exc: Exception) -> str | None:
     """Render a calm, on-persona message for known-benign LLM backend failures.
 
     Azure OpenAI's content-safety filter (and the agent framework's handling of
-    it) surfaces as an opaque exception — e.g. ``'ContentFiltered' is not a valid
-    ContentFilterCodes`` — rather than a clean refusal, which would otherwise leak
-    a raw stack string to the chat user. We detect that (and transient rate
-    limits) and reply gracefully. The unsafe or failed action never executed
-    regardless: this steward is read-only. Returns None for unrecognised errors so
-    the caller falls back to the generic message.
+    it) surfaces as an opaque exception rather than a clean refusal, which would
+    otherwise leak a raw stack string to the chat user. We detect that (and
+    transient rate limits) and reply gracefully. The unsafe or failed action
+    never executed regardless: any write is HITL-gated. Returns None for
+    unrecognised errors so the caller falls back to the generic message.
     """
     text = str(exc).lower()
     if "contentfilter" in text or "content_filter" in text or "responsible ai" in text:
         return (
             "I can't help with that request — it was flagged by the platform's "
-            "content-safety filter, so I won't act on it. I'm a read-only steward "
-            "regardless. Ask me about what I observe and I'll gladly help."
+            "content-safety filter, so I won't act on it. Any change I make is "
+            "human-gated regardless. Ask me about what I observe and I'll gladly help."
         )
     if "rate limit" in text or "too_many_requests" in text or "429" in text:
         return (
@@ -142,12 +155,42 @@ def _build_app(settings: Settings) -> FastAPI:
         (mlflow_tool,) = agent_module.build_mcp_tools(settings)
         await stack.enter_async_context(mlflow_tool)
         chat = agent_module._build_chat_client(settings)
-        system_prompt = agent_module._read_prompt("pipeline-steward.chat.md")
+
+        tools: list[Any] = [mlflow_tool]
+        # Iteration 2: gated write. Only when write is deliberately enabled do we
+        # load the write-capable persona and hand the agent the single, NON-
+        # mutating propose_promotion tool. Off = byte-for-byte the read-only steward.
+        if settings.write_enabled:
+            ttl = settings.write_proposal_ttl_seconds
+            if settings.write_approval_channel == "github_pr":
+                ttl = max(ttl, PR_CHANNEL_MIN_TTL_SECONDS)
+            gate = WriteGate(
+                MlflowApplier(settings.mlflow_tracking_uri, settings.registered_model_name),
+                ttl_seconds=ttl,
+            )
+            state["gate"] = gate
+            channel = build_channel(settings, gate)
+            state["channel"] = channel
+            tools.append(build_propose_promotion_tool(gate, settings.registered_model_name))
+            persona = agent_module._read_prompt("pipeline-steward.gated-write.chat.md")
+            LOG.info(
+                "[chat] WRITE-ENABLED: HITL gate armed for model '%s' via '%s' channel",
+                settings.registered_model_name, channel.name,
+            )
+            if channel.name == "github_pr":
+                state["poll_task"] = asyncio.create_task(
+                    poll_loop(channel, gate, settings.github_poll_seconds)
+                )
+        else:
+            state["gate"] = None
+            state["channel"] = None
+            persona = agent_module._read_prompt("pipeline-steward.chat.md")
+
         agent = chat.as_agent(
             name="hello-pipeline-chat",
             id="hello-pipeline-chat",
-            instructions=system_prompt,
-            tools=[mlflow_tool],
+            instructions=persona,
+            tools=tools,
         )
         state["stack"] = stack
         state["agent"] = agent
@@ -156,6 +199,11 @@ def _build_app(settings: Settings) -> FastAPI:
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:  # pragma: no cover - integration path
+        poll_task: asyncio.Task | None = state.get("poll_task")
+        if poll_task is not None:
+            poll_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poll_task
         stack: AsyncExitStack | None = state.get("stack")
         if stack is not None:
             await stack.aclose()
@@ -178,6 +226,8 @@ def _build_app(settings: Settings) -> FastAPI:
             session = agent.create_session(session_id=session_id)
             sessions[session_id] = session
 
+        gate: WriteGate | None = state.get("gate")
+        token = current_session_id.set(session_id)
         tracer = agent_module.get_tracer()
         trace_hex: str | None = None
         with tracer.start_as_current_span(
@@ -187,11 +237,49 @@ def _build_app(settings: Settings) -> FastAPI:
             try:
                 result = await agent.run(req.message, session=session)
                 reply = result.text if hasattr(result, "text") else str(result)
-            except Exception as exc:  # noqa: BLE001 - report errors to the caller
+            except Exception as exc:
                 LOG.exception("[chat] turn failed")
                 span.record_exception(exc)
                 reply = _friendly_error(exc) or f"Sorry — I hit an error handling that: {exc}"
-        return ChatReply(reply=reply.strip(), session_id=session_id, trace_id=trace_hex)
+            finally:
+                current_session_id.reset(token)
+
+        pending = None
+        if gate is not None:
+            channel: ApprovalChannel | None = state.get("channel")
+            # For an async channel, publish any not-yet-published proposal (open a
+            # PR) off the event loop. The gate stays pure; the channel does I/O.
+            if channel is not None and channel.name != "chat":
+                for p in gate.pending_for_session(session_id):
+                    if p.external_ref is None:
+                        await asyncio.to_thread(channel.open, p)
+            pending = pending_payload(gate, session_id)
+        return ChatReply(
+            reply=reply.strip(), session_id=session_id, trace_id=trace_hex, pending=pending
+        )
+
+    @app.post("/approve")
+    async def approve_endpoint(req: DecisionRequest) -> dict[str, str]:
+        return decide(state, req, approve=True)
+
+    @app.post("/reject")
+    async def reject_endpoint(req: DecisionRequest) -> dict[str, str]:
+        return decide(state, req, approve=False)
+
+    @app.post("/reconcile")
+    async def reconcile_endpoint() -> dict[str, Any]:
+        """Force an immediate poll of the async approval channel (PR states)."""
+        gate: WriteGate | None = state.get("gate")
+        channel: ApprovalChannel | None = state.get("channel")
+        if gate is None or channel is None or channel.name == "chat":
+            return {"status": "noop", "resolved": []}
+        changed = await asyncio.to_thread(channel.sync, gate)
+        return {
+            "status": "ok",
+            "resolved": [
+                {"id": p.id, "status": p.status.value, "outcome": p.outcome} for p in changed
+            ],
+        }
 
     return app
 

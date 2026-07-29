@@ -18,6 +18,10 @@ data:
 {{ .Files.Get "prompts/quality-steward.system.md" | indent 4 }}
   quality-steward.chat.md: |-
 {{ .Files.Get "prompts/quality-steward.chat.md" | indent 4 }}
+{{- if .Values.writeEnabled }}
+  quality-steward.gated-write.chat.md: |-
+{{ .Files.Get "prompts/quality-steward.gated-write.chat.md" | indent 4 }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -75,6 +79,43 @@ spec:
               value: "true"
             - name: CHAT_PORT
               value: {{ .Values.chat.port | quote }}
+{{- end }}
+{{- if .Values.writeEnabled }}
+            # Iteration 2: arm the gated-write HITL path. The steward gains the
+            # non-mutating propose_annotation tool and the write-capable persona;
+            # every actuation still passes the human gate (ADR-0011). The one
+            # mutation is attaching a numeric eval score to a Langfuse trace.
+            - name: WRITE_ENABLED
+              value: "true"
+            - name: WRITE_PROPOSAL_TTL_SECONDS
+              value: {{ .Values.writeProposalTtlSeconds | default 900 | quote }}
+            - name: WRITE_APPROVAL_CHANNEL
+              value: {{ .Values.writeApprovalChannel | quote }}
+{{- if eq .Values.writeApprovalChannel "github_pr" }}
+            # github_pr channel: MERGE=approve / CLOSE=reject. The gh CLI needs a
+            # PAT (repo scope) — provide it via a Secret named 'github-token'.
+            - name: GITHUB_REPO
+              value: {{ .Values.github.repo | quote }}
+            - name: GITHUB_BASE_BRANCH
+              value: {{ .Values.github.baseBranch | quote }}
+            - name: GITHUB_PROPOSALS_DIR
+              value: {{ .Values.github.proposalsDir | quote }}
+            - name: GITHUB_POLL_SECONDS
+              value: {{ .Values.github.pollSeconds | quote }}
+            - name: GH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: token
+            # gh needs a writable config/state dir; the root FS is read-only, so
+            # point it (and XDG dirs) at the tmp emptyDir mounted at /tmp.
+            - name: GH_CONFIG_DIR
+              value: /tmp/gh
+            - name: XDG_STATE_HOME
+              value: /tmp
+            - name: XDG_DATA_HOME
+              value: /tmp
+{{- end }}
 {{- end }}
             # uv needs a writable cache dir; root FS is read-only, so point it
             # at the tmp emptyDir volume mounted below.

@@ -1,5 +1,23 @@
 # Prompt CHANGELOG
 
+## 1.5.0
+- Added `pipeline-steward.gated-write.chat.md` and
+  `quality-steward.gated-write.chat.md` — the **Iteration 2 (gated write +
+  HITL)** personas for the Pipeline and Quality Stewards, extending the depth
+  ladder that started with the Inference Steward. Reads stay ungated; each
+  steward may now **propose exactly one kind of mutation** but never executes
+  it — every write waits for a human's approval at the gate (ADR-0011: *no
+  autonomous actuation*):
+  - Pipeline → `propose_promotion`: an MLflow model-version **stage transition**
+    (e.g. promote the Staging candidate to Production), bounded to the single
+    registered model `phi-4-mini-meshops`.
+  - Quality → `propose_annotation`: attach a numeric **evaluation score** to a
+    specific Langfuse trace (a human-review annotation).
+  Loaded only when `write_enabled=true`; otherwise the read-only
+  `*-steward.chat.md` personas are used unchanged. The propose→approve→apply→
+  audit spine and pluggable chat/github_pr channels are shared across all three
+  stewards via the new `src/stewards/hitl/` package.
+
 ## 1.4.0
 - Added `inference-steward.gated-write.chat.md` — the **Iteration 2 (gated
   write + HITL)** persona for the Inference Steward. Reads stay ungated; the

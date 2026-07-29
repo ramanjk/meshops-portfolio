@@ -62,3 +62,46 @@ class Settings(BaseSettings):
         False, description="Serve the interactive chat API instead of running cycles."
     )
     chat_port: int = Field(8080, description="Port for the chat HTTP server.")
+
+    # ---- Iteration 2: gated write (HITL) -------------------------------------
+    # Master capability flag for the write scope. OFF by default, which makes the
+    # steward byte-for-byte its Iteration-1 read-only self: no propose_annotation
+    # tool is wired and the read-only persona is loaded. Turning it ON only makes
+    # the HITL gate *reachable* — it never removes the gate (ADR-0011). The one
+    # mutation this steward can propose is attaching a numeric eval score to a
+    # Langfuse trace, bounded to the project its credentials scope it to.
+    write_enabled: bool = Field(
+        False,
+        description="Enable the gated-write path (propose -> HITL approve -> act). Off = read-only.",
+    )
+    # Pending proposals expire after this many seconds (single-use, TTL-bounded).
+    write_proposal_ttl_seconds: int = Field(
+        900,
+        ge=30,
+        description="Seconds a pending annotation proposal stays approvable before it expires.",
+    )
+    # Which HITL approval channel resolves proposals (ADR-0011: pluggable
+    # channels on one shared gate + executor + audit).
+    #   "chat"       -> interactive Approve/Reject in the chat UI (synchronous).
+    #   "github_pr"  -> the steward opens a PR per proposal; MERGE = approve,
+    #                   CLOSE = reject. The same in-process executor still writes
+    #                   the score under the same bounded Langfuse credentials.
+    write_approval_channel: str = Field(
+        "chat",
+        description="HITL approval channel: 'chat' or 'github_pr'.",
+    )
+    # --- github_pr channel settings (ignored unless channel == github_pr) ---
+    github_repo: str = Field(
+        "",
+        description="owner/repo the steward opens proposal PRs against (uses the gh CLI).",
+    )
+    github_base_branch: str = Field(
+        "main", description="Base branch proposal PRs target."
+    )
+    github_proposals_dir: str = Field(
+        "hitl-proposals",
+        description="Repo directory the proposal file is written to on the PR branch.",
+    )
+    github_poll_seconds: int = Field(
+        20, ge=5, description="How often the reconcile loop polls open proposal PRs."
+    )

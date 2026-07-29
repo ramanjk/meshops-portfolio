@@ -33,7 +33,7 @@ def test_content_filter_variants_detected(friendly_error) -> None:
         reply = friendly_error(Exception(msg))
         assert reply is not None
         assert "content-safety filter" in reply
-        assert "read-only" in reply
+        assert "won't act on it" in reply
 
 
 def test_rate_limit_detected(friendly_error) -> None:
