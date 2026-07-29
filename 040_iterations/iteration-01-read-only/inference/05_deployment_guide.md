@@ -286,6 +286,39 @@ kubectl wait workspace/lab-phi-4-mini-eus2-01 -n meshops-workloads \
 > update, our `null_resource.kaito_addon` re-asserts it on every `terraform apply`
 > (skipping the slow call when it's already on).
 
+### 3.2a GPU utilization metrics — the DCGM exporter
+
+The KAITO GPU node ships only the **nvidia device plugin** (it advertises
+`nvidia.com/gpu` to the scheduler) — it exports **no** GPU utilization metrics.
+So the Inference Steward's *"what's the current GPU utilization?"* query
+(`DCGM_FI_DEV_GPU_UTIL`) returns nothing until you add an exporter. Deploy the
+NVIDIA **DCGM exporter** (a small DaemonSet on GPU nodes) plus a PodMonitor so
+Azure Managed Prometheus scrapes it:
+
+```bash
+kubectl apply -f helm/stewards/extras/dcgm-exporter.yaml
+# Lands only on GPU nodes (nodeSelector kubernetes.azure.com/accelerator=nvidia,
+# tolerates the sku=gpu taint). One tiny pod per GPU node; idle-cheap.
+```
+
+Two gotchas baked into that manifest:
+
+- **`azmonitoring.coreos.com/v1` PodMonitor**, not the upstream
+  `monitoring.coreos.com` one — Azure Managed Prometheus only scrapes the former.
+- **`honorLabels: true`** on the scrape endpoint. The exporter attributes GPU
+  metrics to the *model* pod (`pod=lab-phi-4-mini-eus2-01-0`) via the kubelet
+  pod-resources API. Without `honorLabels`, Azure Managed Prometheus renames
+  those to `exported_pod`/`exported_namespace` (the exporter pod's own labels
+  win), so the steward's natural scope
+  `DCGM_FI_DEV_GPU_UTIL{namespace="meshops-workloads"}` matches nothing and it
+  reports **0%**. With it on, the intuitive query works.
+
+`DCGM_FI_DEV_GPU_UTIL` is a gauge that reads **~0% at idle by design** (the GPU
+only burns compute while generating) and ~100% under load — GPU *memory*
+(`DCGM_FI_DEV_FB_USED`) stays high because the weights are resident. Because the
+exporter lives on the GPU node, it disappears when the Workspace scales to zero;
+**re-apply it after each cluster start**, alongside the Workspace.
+
 ### 3.3 The image and the chart
 
 ```bash
@@ -484,6 +517,7 @@ helm uninstall hello-inference -n meshops
 # Full teardown:
 helm uninstall langfuse -n langfuse
 kubectl delete -f helm/stewards/extras/workspace.yaml
+kubectl delete -f helm/stewards/extras/dcgm-exporter.yaml   # GPU metrics exporter (harmless if the GPU node is already gone)
 terraform -chdir=infra/terraform destroy -var "subscription_id=$(az account show --query id -o tsv)"
 ```
 
@@ -505,6 +539,7 @@ terraform -chdir=infra/terraform destroy -var "subscription_id=$(az account show
 | Jumpbox VM + public IP + NSG | `infra/terraform/vm.tf` | VM compute + static IP — `az vm deallocate` to zero |
 | Managed Prometheus + Grafana | `infra/terraform/monitoring.tf` | Included/free tier at this volume |
 | KAITO Workspace CR | `helm/stewards/extras/workspace.yaml` | $0 GPU when idle |
+| DCGM GPU-metrics exporter | `helm/stewards/extras/dcgm-exporter.yaml` | One tiny pod per GPU node; $0 when GPU scaled to zero |
 | Langfuse | `helm/langfuse/values.yaml` (+ `create-langfuse-secret.sh`) | PVC disk only (demo-grade) |
 | hello-inference CronJob | `k8s/cronjob.yaml` | ~20 s every 15 min; AOAI usage a few $/mo |
 | Container image | `Dockerfile` + ACR `acrmeshops` | ACR Basic storage (prune old tags) |
