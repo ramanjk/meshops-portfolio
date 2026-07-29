@@ -4,9 +4,15 @@ LinkedIn strips markdown, but keeps line breaks, emojis, Unicode bold and divide
 characters. These versions are formatted with those so they render scannable and
 attractive. Copy the block between the >>> markers straight into the LinkedIn box.
 
-Attach the media from 040_iterations/assets/ :
-- Post #1  ->  meshops-arch.mp4 (video)  or  meshops-arch.png (image)
-- Posts #2/#3 -> reuse the diagram or a per-steward visual
+Attach the media from 040_iterations/assets/ (each post names its own file):
+- Post #1        ->  meshops-arch.mp4 (video)  or  meshops-arch.png (image)
+- Post #2 / #2B  ->  inference-iter1-replay · inference-iter2-replay  (mp4/gif)
+- Post #3A / #3B ->  pipeline-iter1-replay  · pipeline-iter2-replay   (mp4/gif)
+- Post #4A / #4B ->  quality-iter1-replay   · quality-iter2-replay    (mp4/gif)
+
+Post map: #1 intro · #2/#2B Inference (read-only / gated-write) ·
+#3A/#3B Pipeline · #4A/#4B Quality. All chat replays are faithful re-creations
+of the REAL tested transcripts (generated offline by assets/gen_chat_replay.py).
 
 ============================================================
 POST #1 — PROJECT INTRO
@@ -172,12 +178,11 @@ Same steward. Same read safety. Now a 𝗴𝗮𝘁𝗲𝗱 𝗵𝗮𝗻𝗱 — 
 <<<
 
 ============================================================
-POST #3 — STEWARD #2: THE PIPELINE STEWARD (+ how the two connect)
+POST #3A — STEWARD #2: THE PIPELINE STEWARD (Iteration 1 · read-only + how the two connect)
 ============================================================
 Media: attach 040_iterations/assets/pipeline-iter1-replay.mp4 (or .gif) — a
 chat-replay of the REAL tested Q&A (list versions/stages → which is Production →
-declines to promote). Iter-2 + Quality replays also exist in assets/ for the
-follow-up posts (pipeline-iter2, quality-iter1, quality-iter2 · mp4 + gif).
+declines to promote).
 >>>
 𝗦𝘁𝗲𝘄𝗮𝗿𝗱 #𝟮 𝗶𝘀 𝗹𝗶𝘃𝗲: 𝘁𝗵𝗲 𝗣𝗶𝗽𝗲𝗹𝗶𝗻𝗲 𝗦𝘁𝗲𝘄𝗮𝗿𝗱. 🔗
 
@@ -189,11 +194,16 @@ And this is where MeshOps becomes a 𝗺𝗲𝘀𝗵.
 
 The Pipeline Steward watches the 𝗠𝗟𝗢𝗽𝘀 side — the MLflow Model Registry.
 
-📦  Which version is in Staging?
-🚀  Which is in Production?
-🗄️  Which got Archived?
+I asked it, live 👇
+🗨️  "𝘓𝘪𝘴𝘵 𝘢𝘭𝘭 𝘷𝘦𝘳𝘴𝘪𝘰𝘯𝘴 𝘢𝘯𝘥 𝘵𝘩𝘦𝘪𝘳 𝘴𝘵𝘢𝘨𝘦𝘴."
+      → v3 Staging (0.86) · v2 Production (0.83) · v1 Archived (0.71)
+🗨️  "𝘞𝘩𝘪𝘤𝘩 𝘪𝘴 𝘪𝘯 𝘗𝘳𝘰𝘥𝘶𝘤𝘵𝘪𝘰𝘯?"
+      → v2, eval_accuracy 0.83.
 
 Read-only, over the registry API — same 3-way no-write safety as steward #1.
+
+🗨️  "𝘚𝘩𝘰𝘶𝘭𝘥 𝘸𝘦 𝘱𝘳𝘰𝘮𝘰𝘵𝘦 𝘷3? 𝘎𝘰 𝘢𝘩𝘦𝘢𝘥."
+      → "I observe and explain promotions — I don't make or propose changes." ✋
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -204,15 +214,135 @@ Read-only, over the registry API — same 3-way no-write safety as steward #1.
 
 The registry's 𝗣𝗿𝗼𝗱𝘂𝗰𝘁𝗶𝗼𝗻 tag is the baton passed between them. 🏃‍♂️
 
-I proved it live, side by side — asked both the same day:
-▸ Pipeline: "Production = v2"
-▸ Inference: "workspace healthy, serving"
-
 Two independent agents. One coherent picture of the platform. 𝗧𝗵𝗮𝘁'𝘀 𝘁𝗵𝗲 𝗺𝗲𝘀𝗵.
+
+Next: I let it 𝗮𝗰𝘁 on the registry — behind a human gate. 👇
+
+#LLMOps #MLOps #AIAgents #Kubernetes #AKS #Azure #MCP #PlatformEngineering #MLflow
+<<<
+
+============================================================
+POST #3B — PIPELINE STEWARD, ITERATION 2 (gated write + HITL)
+============================================================
+Media: attach 040_iterations/assets/pipeline-iter2-replay.mp4 (or .gif) — the
+REAL round-trip: propose v3→Production → "PR #12 merged by ramanjk → approved" →
+"Executed ✓ v3 is now Production" → then a foreign-model promotion DENIED.
+>>>
+𝗠𝘆 𝗣𝗶𝗽𝗲𝗹𝗶𝗻𝗲 𝗦𝘁𝗲𝘄𝗮𝗿𝗱 𝗷𝘂𝘀𝘁 𝗽𝗿𝗼𝗺𝗼𝘁𝗲𝗱 𝗮 𝗺𝗼𝗱𝗲𝗹 𝘁𝗼 𝗣𝗿𝗼𝗱𝘂𝗰𝘁𝗶𝗼𝗻 — 𝗮𝗻𝗱 𝗜 𝗵𝗮𝘃𝗲 𝘁𝗵𝗲 𝗣𝗥 𝘁𝗼 𝗽𝗿𝗼𝘃𝗲 𝗶𝘁. 🚀
+
+In iteration 1 it could only 𝗿𝗲𝗮𝗱 the MLflow registry. Now it can 𝗺𝗼𝘃𝗲 a model between stages — but only after a human approves.
+
+𝗦𝘁𝗲𝘄𝗮𝗿𝗱𝘀 𝗽𝗿𝗼𝗽𝗼𝘀𝗲. 𝗛𝘂𝗺𝗮𝗻𝘀 𝗱𝗶𝘀𝗽𝗼𝘀𝗲. — the same rule, now with a real action behind it.
 
 ━━━━━━━━━━━━━━━━━━━━
 
-Four more stewards to go — 𝗤𝘂𝗮𝗹𝗶𝘁𝘆 · 𝗦𝗥𝗘 · 𝗚𝗮𝘁𝗲𝘄𝗮𝘆 · 𝗦𝗲𝗰𝘂𝗿𝗶𝘁𝘆. Follow along. 👇
+𝗧𝗵𝗲 𝗿𝗼𝘂𝗻𝗱-𝘁𝗿𝗶𝗽 (𝗜 𝘁𝗲𝘀𝘁𝗲𝗱 𝘁𝗵𝗶𝘀 𝗹𝗶𝘃𝗲)
 
-#LLMOps #MLOps #AIAgents #Kubernetes #AKS #Azure #MCP #PlatformEngineering
+🗨️  "𝘗𝘳𝘰𝘮𝘰𝘵𝘦 𝘱𝘩𝘪-4-𝘮𝘪𝘯𝘪-𝘮𝘦𝘴𝘩𝘰𝘱𝘴 𝘷3 𝘚𝘵𝘢𝘨𝘪𝘯𝘨 → 𝘗𝘳𝘰𝘥𝘶𝘤𝘵𝘪𝘰𝘯."
+1️⃣  Dry-run + proposal pw_f2695e61 — "no change made." It doesn't claim it happened.
+2️⃣  It opens 𝗚𝗶𝘁𝗛𝘂𝗯 𝗣𝗥 #𝟭𝟮 with the exact preview.
+3️⃣  I 𝗺𝗲𝗿𝗴𝗲 → approved (by my real GitHub login).
+4️⃣  ✅ "v3 is now in stage 𝗣𝗿𝗼𝗱𝘂𝗰𝘁𝗶𝗼𝗻." v2 → Archived. Audit line written.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗧𝗵𝗲 𝗴𝘂𝗮𝗿𝗱𝗿𝗮𝗶𝗹 𝗜 𝗰𝗮𝗿𝗲 𝗺𝗼𝘀𝘁 𝗮𝗯𝗼𝘂𝘁
+
+🗨️  "𝘕𝘰𝘸 𝘱𝘳𝘰𝘮𝘰𝘵𝘦 𝘴𝘰𝘮𝘦-𝘰𝘵𝘩𝘦𝘳-𝘮𝘰𝘥𝘦𝘭 𝘵𝘰𝘰."
+      🛑  Denied. The applier is 𝗯𝗼𝘂𝗻𝗱 𝘁𝗼 𝗼𝗻𝗲 𝗿𝗲𝗴𝗶𝘀𝘁𝗲𝗿𝗲𝗱 𝗺𝗼𝗱𝗲𝗹. Even a perfectly-worded request for another model can't get through.
+
+The blast radius isn't a prompt rule you hope holds — it's 𝗲𝗻𝗳𝗼𝗿𝗰𝗲𝗱 𝗶𝗻 𝗰𝗼𝗱𝗲, at the applier.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗪𝗵𝘆 𝗮 𝗣𝗥 𝗮𝘀 𝘁𝗵𝗲 𝗮𝗽𝗽𝗿𝗼𝘃𝗮𝗹 𝗴𝗮𝘁𝗲?
+
+A model promotion is a 𝗿𝗲𝗹𝗲𝗮𝘀𝗲 decision. Routing it through a PR means it's reviewable, needs repo write access to approve, and leaves a permanent audit trail — 𝗠𝗟𝗢𝗽𝘀 𝗰𝗵𝗮𝗻𝗴𝗲 𝗺𝗮𝗻𝗮𝗴𝗲𝗺𝗲𝗻𝘁 𝘆𝗼𝘂 𝗮𝗹𝗿𝗲𝗮𝗱𝘆 𝘁𝗿𝘂𝘀𝘁.
+
+Same steward. Same read safety. Now a gated hand on the registry. 👇
+
+#LLMOps #MLOps #AIAgents #MLflow #Azure #MCP #HumanInTheLoop #PlatformEngineering
+
+<<<
+
+============================================================
+POST #4A — STEWARD #3: THE QUALITY STEWARD (Iteration 1 · read-only)
+============================================================
+Media: attach 040_iterations/assets/quality-iter1-replay.mp4 (or .gif) — a
+chat-replay of the REAL tested Q&A (summarize evals → spots downward DRIFT →
+declines to write a score).
+>>>
+𝗦𝘁𝗲𝘄𝗮𝗿𝗱 #𝟯 𝗶𝘀 𝗹𝗶𝘃𝗲: 𝘁𝗵𝗲 𝗤𝘂𝗮𝗹𝗶𝘁𝘆 𝗦𝘁𝗲𝘄𝗮𝗿𝗱. 🔬
+
+Inference watches 𝘀𝗲𝗿𝘃𝗶𝗻𝗴. Pipeline watches the 𝗿𝗲𝗴𝗶𝘀𝘁𝗿𝘆. This one watches whether the model is actually any 𝗴𝗼𝗼𝗱.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗪𝗵𝗮𝘁 𝗶𝘁 𝗱𝗼𝗲𝘀
+
+The Quality Steward reads 𝗟𝗮𝗻𝗴𝗳𝘂𝘀𝗲 traces + evaluation scores — the AIOps signal on model behaviour.
+
+I interviewed it, live 👇
+🗨️  "𝘚𝘶𝘮𝘮𝘢𝘳𝘪𝘴𝘦 𝘳𝘦𝘤𝘦𝘯𝘵 𝘦𝘷𝘢𝘭 𝘴𝘤𝘰𝘳𝘦𝘴 𝘢𝘯𝘥 𝘵𝘳𝘢𝘤𝘦𝘴."
+      → relevance ~0.75–0.76 · faithfulness ~0.60–0.61, healthy latency.
+
+🗨️  "𝘞𝘩𝘢𝘵'𝘴 𝘵𝘩𝘦 𝘲𝘶𝘢𝘭𝘪𝘵𝘺 𝘵𝘳𝘦𝘯𝘥?"
+      → "Both signals are drifting 𝗗𝗢𝗪𝗡 over the last 20 evals — an early sign of 𝗾𝘂𝗮𝗹𝗶𝘁𝘆 𝗱𝗿𝗶𝗳𝘁 worth watching." 📉
+
+That's the whole point of an AIOps agent: not "is the pod up?" but "is the model 𝗴𝗲𝘁𝘁𝗶𝗻𝗴 𝘄𝗼𝗿𝘀𝗲?"
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗔𝗻𝗱 𝘁𝗵𝗲 𝘀𝗮𝗺𝗲 𝗱𝗶𝘀𝗰𝗶𝗽𝗹𝗶𝗻𝗲
+
+🗨️  "𝘈𝘵𝘵𝘢𝘤𝘩 𝘢 𝘣𝘦𝘵𝘵𝘦𝘳 𝘴𝘤𝘰𝘳𝘦 𝘵𝘰 𝘵𝘩𝘢𝘵 𝘵𝘳𝘢𝘤𝘦."
+      → "I only monitor and report — I don't write scores." ✋
+
+Read-only, enforced 3 ways — a monitor you can trust precisely because it 𝗰𝗮𝗻'𝘁 quietly rewrite its own grades.
+
+Next: I let it 𝗮𝗻𝗻𝗼𝘁𝗮𝘁𝗲 — behind a human gate, with a hard numeric bound. 👇
+
+#LLMOps #AIOps #AIAgents #Langfuse #Azure #MCP #MLOps #PlatformEngineering
+<<<
+
+============================================================
+POST #4B — QUALITY STEWARD, ITERATION 2 (gated write + HITL)
+============================================================
+Media: attach 040_iterations/assets/quality-iter2-replay.mp4 (or .gif) — the
+REAL round-trip: propose faithfulness=0.55 → "PR #13 merged by ramanjk →
+approved" → "Executed ✓ score attached (id 49df94fd…)" → then an out-of-range
+(1.7) score DENIED.
+>>>
+𝗔 𝗵𝘂𝗺𝗮𝗻-𝗶𝗻-𝘁𝗵𝗲-𝗹𝗼𝗼𝗽 𝗾𝘂𝗮𝗹𝗶𝘁𝘆 𝘀𝗰𝗼𝗿𝗲 — 𝘄𝗿𝗶𝘁𝘁𝗲𝗻 𝗯𝘆 𝗮𝗻 𝗔𝗜 𝗮𝗴𝗲𝗻𝘁, 𝗮𝗽𝗽𝗿𝗼𝘃𝗲𝗱 𝗯𝘆 𝗺𝗲. 🔬
+
+Iteration 1 of the Quality Steward could only 𝗿𝗲𝗮𝗱 evals + traces. Iteration 2 lets it 𝗮𝗻𝗻𝗼𝘁𝗮𝘁𝗲 a trace with a human evaluation score — through the same gate.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗧𝗵𝗲 𝗿𝗼𝘂𝗻𝗱-𝘁𝗿𝗶𝗽 (𝘁𝗲𝘀𝘁𝗲𝗱 𝗹𝗶𝘃𝗲)
+
+🗨️  "𝘈𝘯𝘯𝘰𝘵𝘢𝘵𝘦 𝘵𝘳𝘢𝘤𝘦 09𝘣7861𝘢… 𝘸𝘪𝘵𝘩 𝘧𝘢𝘪𝘵𝘩𝘧𝘶𝘭𝘯𝘦𝘴𝘴 = 0.55."
+1️⃣  Dry-run + proposal pw_85560f20. No score written yet.
+2️⃣  Opens 𝗚𝗶𝘁𝗛𝘂𝗯 𝗣𝗥 #𝟭𝟯 with the exact preview.
+3️⃣  I 𝗺𝗲𝗿𝗴𝗲 → approved.
+4️⃣  ✅ score 'faithfulness'=0.55 attached (score id 49df94fd…). Audit line written.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗧𝗵𝗲 𝗴𝘂𝗮𝗿𝗱𝗿𝗮𝗶𝗹
+
+🗨️  "𝘕𝘰𝘸 𝘴𝘦𝘵 𝘧𝘢𝘪𝘵𝘩𝘧𝘶𝘭𝘯𝘦𝘴𝘴 𝘵𝘰 1.7."
+      🛑  Denied. Scores are 𝗯𝗼𝘂𝗻𝗱 𝘁𝗼 𝟬.𝟬–𝟭.𝟬. 1.7 is out of range — nothing written.
+
+A write-capable agent isn't dangerous because it can write. It's safe because 𝘄𝗵𝗮𝘁 it can write is 𝗰𝗼𝗻𝘀𝘁𝗿𝗮𝗶𝗻𝗲𝗱 — in code, not vibes.
+
+━━━━━━━━━━━━━━━━━━━━
+
+𝗧𝗵𝗿𝗲𝗲 𝘀𝘁𝗲𝘄𝗮𝗿𝗱𝘀. 𝗧𝘄𝗼 𝗶𝘁𝗲𝗿𝗮𝘁𝗶𝗼𝗻𝘀. 𝗢𝗻𝗲 𝗽𝗮𝘁𝘁𝗲𝗿𝗻.
+
+🛰️  Inference · 🔗 Pipeline · 🔬 Quality — each read-only first, then gated-write, all sharing 𝗼𝗻𝗲 𝗛𝗜𝗧𝗟 𝘀𝗽𝗶𝗻𝗲.
+
+𝗦𝘁𝗲𝘄𝗮𝗿𝗱𝘀 𝗽𝗿𝗼𝗽𝗼𝘀𝗲. 𝗛𝘂𝗺𝗮𝗻𝘀 𝗱𝗶𝘀𝗽𝗼𝘀𝗲. Across every substrate. 👇
+
+#LLMOps #AIOps #AIAgents #Langfuse #HumanInTheLoop #Azure #MCP #PlatformEngineering
 <<<
