@@ -1,12 +1,12 @@
 apiVersion: azmonitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
-  name: hello-pipeline
+  name: {{ .Values.serviceAccount.name }}
   namespace: {{ .Values.namespace }}
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: hello-pipeline
+      app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
   podMetricsEndpoints:
     - port: metrics
       interval: 30s

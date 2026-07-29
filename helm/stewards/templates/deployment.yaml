@@ -11,7 +11,7 @@ metadata:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: inference-steward-prompts
+  name: {{ .Values.serviceAccount.name }}-prompts
   namespace: {{ .Values.namespace }}
 data:
   inference-steward.system.md: |-
@@ -26,20 +26,20 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hello-inference
+  name: {{ .Values.serviceAccount.name }}
   namespace: {{ .Values.namespace }}
   labels:
-    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: hello-inference
+      app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: hello-inference
+        app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
         azure.workload.identity/use: "true"
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
@@ -48,7 +48,7 @@ spec:
         runAsUser: 1000
         fsGroup: 1000
       containers:
-        - name: hello-inference
+        - name: {{ .Values.serviceAccount.name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["uv", "run", "--no-sync", "python", "-m", "stewards.inference"]
@@ -130,12 +130,12 @@ spec:
             - name: LANGFUSE_PUBLIC_KEY
               valueFrom:
                 secretKeyRef:
-                  name: hello-inference-secrets
+                  name: {{ .Values.serviceAccount.name }}-secrets
                   key: LANGFUSE_PUBLIC_KEY
             - name: LANGFUSE_SECRET_KEY
               valueFrom:
                 secretKeyRef:
-                  name: hello-inference-secrets
+                  name: {{ .Values.serviceAccount.name }}-secrets
                   key: LANGFUSE_SECRET_KEY
           volumeMounts:
             - name: prompts
@@ -169,7 +169,7 @@ spec:
       volumes:
         - name: prompts
           configMap:
-            name: inference-steward-prompts
+            name: {{ .Values.serviceAccount.name }}-prompts
         - name: tmp
           emptyDir: {}
         - name: secrets-store
@@ -177,4 +177,4 @@ spec:
             driver: secrets-store.csi.k8s.io
             readOnly: true
             volumeAttributes:
-              secretProviderClass: hello-inference-kv
+              secretProviderClass: {{ .Values.serviceAccount.name }}-kv

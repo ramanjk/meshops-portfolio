@@ -3,10 +3,10 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: hello-pipeline-chat
+  name: {{ .Values.serviceAccount.name }}-chat
   namespace: {{ .Values.namespace }}
   labels:
-    app.kubernetes.io/name: hello-pipeline
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward-chat
   {{- with $ing.annotations }}
   annotations:
@@ -34,7 +34,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: hello-pipeline-chat
+                name: {{ .Values.serviceAccount.name }}-chat
                 port:
                   number: {{ .Values.chat.port }}
 {{- end }}

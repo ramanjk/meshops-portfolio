@@ -19,7 +19,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ .Values.serviceAccount.name }}-view
   labels:
-    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -35,7 +35,7 @@ kind: ClusterRole
 metadata:
   name: {{ .Values.serviceAccount.name }}-cluster-reader
   labels:
-    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward
 rules:
   # KAITO Workspace CRD (not covered by the built-in view role).
@@ -60,7 +60,7 @@ kind: ClusterRoleBinding
 metadata:
   name: {{ .Values.serviceAccount.name }}-cluster-reader
   labels:
-    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward
 roleRef:
   apiGroup: rbac.authorization.k8s.io

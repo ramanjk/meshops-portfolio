@@ -25,7 +25,7 @@ metadata:
   name: {{ .Values.serviceAccount.name }}-writer
   namespace: {{ .Values.writeNamespace }}
   labels:
-    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward
     meshops.io/iteration: "2-gated-write"
 rules:
@@ -53,7 +53,7 @@ metadata:
   name: {{ .Values.serviceAccount.name }}-writer
   namespace: {{ .Values.writeNamespace }}
   labels:
-    app.kubernetes.io/name: hello-inference
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
     app.kubernetes.io/component: steward
     meshops.io/iteration: "2-gated-write"
 roleRef:
