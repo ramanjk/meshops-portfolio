@@ -57,7 +57,7 @@ Two LLMs in play (an important nuance to call out):
 | "Are you healthy? What model is the workspace serving?" | Cites `lab-phi-4-mini-eus2-01`, `INFERENCEREADY=True`, phi-4-mini. |
 | "List how many model deployments are present." | Maps "model deployment" → the KAITO Workspace (there are no plain Deployments for the model). Explains the KAITO abstraction. |
 | "How many replicas are configured vs ready?" | `resource.count` vs pod status. |
-| "What's the current GPU utilization?" | Prometheus GPU metric. |
+| "What's the current GPU utilization?" | `DCGM_FI_DEV_GPU_UTIL` via Prometheus. **~0% at idle by design** — put the model under load first (see note below) to see it climb to ~100%. GPU *memory* stays high at idle (weights resident). |
 | "Which GPU SKU / node is the model on?" | T4 / `Standard_NC4as_T4_v3`. |
 | *(guardrail)* "Scale the model to 2 replicas." | **Declines** — read-only in this iteration. |
 
@@ -173,11 +173,42 @@ whole thesis in four questions.
 - "Write me a poem / do my taxes." → politely redirects (off-platform).
 - Ask any steward to read a Secret → refuses / cannot (Secrets withheld).
 
+## GPU utilization test (idle vs load)
+
+The Inference Steward answers "GPU utilization?" from `DCGM_FI_DEV_GPU_UTIL`
+(NVIDIA DCGM exporter → Azure Managed Prometheus). It reads **~0% at idle by
+design** — the T4 only burns compute while generating. To demo a real number,
+drive load, then ask again (or read it directly):
+
+```bash
+# 1) sustained load (model svc is ClusterIP-only, so run inside the cluster)
+kubectl run gpu-load -n meshops-workloads --image=curlimages/curl:8.10.1 --command -- \
+  sh -c 'while true; do for i in 1 2 3 4 5 6; do curl -s -o /dev/null \
+    http://lab-phi-4-mini-eus2-01.meshops-workloads.svc:80/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d "{\"model\":\"phi-4-mini-instruct\",\"messages\":[{\"role\":\"user\",\"content\":\"Write 800 words on distributed systems.\"}],\"max_tokens\":900}" & done; wait; done'
+
+# 2) read the live GPU% (or just ask the steward "What's the current GPU utilization?")
+EIP=$(kubectl get pod -n gpu-monitoring -l app.kubernetes.io/name=dcgm-exporter -o jsonpath='{.items[0].status.podIP}')
+kubectl run tmp --rm -i --restart=Never --image=curlimages/curl:8.10.1 -n gpu-monitoring -- \
+  -s http://$EIP:9400/metrics | grep DCGM_FI_DEV_GPU_UTIL   # → ~100 under load
+
+# 3) cleanup
+kubectl delete pod gpu-load -n meshops-workloads --force
+```
+
+Under load the T4 hits ~100%; at idle it's 0% while `DCGM_FI_DEV_FB_USED` stays
+~14 GB (weights resident). vLLM's own `/metrics` (`vllm:num_requests_running`,
+`vllm:gpu_cache_usage_perc`) is an alternative, LLM-native saturation signal.
+
 ## Reminders
 
 - Use `http://` explicitly (browser HTTPS-upgrade returns an empty response).
 - iter2 approvals: watch PRs in `ramanjk/meshops-portfolio` (merge = approve,
   close = reject; reconciles ~every 20s).
 - The GPU workspace bills while running.
+- **On cluster start** (after the Workspace is `Ready`): re-apply the GPU
+  metrics exporter so GPU-utilization queries work —
+  `kubectl apply -f helm/stewards/extras/dcgm-exporter.yaml`.
 - **Shutdown:** delete the KAITO Workspace **before** `az aks stop`, or the GPU
   VMSS re-provisions on next start (cost leak).

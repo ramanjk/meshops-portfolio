@@ -1,0 +1,106 @@
+# NVIDIA DCGM exporter for GPU utilization metrics.
+#
+# Why this exists: the Inference Steward answers "what's the current GPU
+# utilization?" by running a PromQL query (e.g. DCGM_FI_DEV_GPU_UTIL) against
+# Azure Managed Prometheus. The KAITO GPU node only runs the nvidia *device
+# plugin* (which advertises nvidia.com/gpu to the scheduler) — it does NOT emit
+# utilization metrics. This DaemonSet adds the DCGM exporter on GPU nodes and a
+# PodMonitor so ama-metrics scrapes DCGM_FI_* into the Azure Monitor workspace.
+#
+# Apply on cluster start (after the workspace is Ready):
+#   kubectl apply -f helm/stewards/extras/dcgm-exporter.yaml
+# It is idle-cheap (one small pod per GPU node); no extra always-on GPU cost.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-monitoring
+  labels:
+    meshops.io/component: gpu-observability
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: dcgm-exporter
+  namespace: gpu-monitoring
+  labels:
+    app.kubernetes.io/name: dcgm-exporter
+    app.kubernetes.io/part-of: meshops
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dcgm-exporter
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dcgm-exporter
+    spec:
+      # Only land on GPU nodes and tolerate the KAITO GPU taint.
+      nodeSelector:
+        kubernetes.azure.com/accelerator: nvidia
+      tolerations:
+        - key: sku
+          operator: Equal
+          value: gpu
+          effect: NoSchedule
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: dcgm-exporter
+          image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
+          securityContext:
+            # SYS_ADMIN unlocks DCGM profiling counters (DCGM_FI_PROF_*).
+            # Basic NVML metrics (DCGM_FI_DEV_GPU_UTIL) work without it too.
+            capabilities:
+              add: ["SYS_ADMIN"]
+          env:
+            # Do NOT request an nvidia.com/gpu resource — the exporter must see
+            # all GPUs without allocating the one the model is serving on.
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: all
+            - name: DCGM_EXPORTER_KUBERNETES
+              value: "true"
+            - name: DCGM_EXPORTER_LISTEN
+              value: ":9400"
+          ports:
+            - name: metrics
+              containerPort: 9400
+          volumeMounts:
+            # Lets the exporter attribute GPU metrics to the owning pod
+            # (exported_pod / exported_namespace labels) via the kubelet
+            # pod-resources API.
+            - name: pod-resources
+              mountPath: /var/lib/kubelet/pod-resources
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 1Gi
+      volumes:
+        - name: pod-resources
+          hostPath:
+            path: /var/lib/kubelet/pod-resources
+---
+# Azure Managed Prometheus (ama-metrics) scrapes this CRD group, NOT the
+# upstream monitoring.coreos.com one.
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: dcgm-exporter
+  namespace: gpu-monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dcgm-exporter
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
