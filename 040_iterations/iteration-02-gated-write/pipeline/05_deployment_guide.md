@@ -87,6 +87,34 @@ Run the manual suite ([`03_test_cases_manual.md`](03_test_cases_manual.md)) — 
 kubectl logs -n meshops deploy/hello-pipeline-iter2 | grep AUDIT
 ```
 
+## 6b. Reset the demo baseline / register a new Staging candidate
+
+A successful promote (TC-P1) **mutates the registry** — v3 moves to Production, so the "should we promote v3?" scenario no longer has a Staging candidate. Two Jobs under `helm/pipeline/extras/` restore or extend the demo state:
+
+```bash
+# Full reset → v1 Archived / v2 Production / v3 Staging (nukes + reseeds the model)
+kubectl delete job mlflow-seed -n mlflow --ignore-not-found
+kubectl apply -f helm/pipeline/extras/mlflow-seed.yaml
+kubectl -n mlflow wait --for=condition=complete job/mlflow-seed --timeout=180s
+kubectl -n mlflow logs job/mlflow-seed | grep -E 'v[0-9]:'
+
+# OR append a NEW candidate (e.g. v4) to Staging WITHOUT wiping (mirrors training/CI)
+kubectl delete job mlflow-add-candidate -n mlflow --ignore-not-found
+kubectl apply -f helm/pipeline/extras/mlflow-add-candidate.yaml
+kubectl -n mlflow wait --for=condition=complete job/mlflow-add-candidate --timeout=180s
+kubectl -n mlflow logs job/mlflow-add-candidate | grep -E '^\[add\]|v[0-9]:'
+```
+
+Tune the appended candidate via env on `mlflow-add-candidate.yaml`: `CANDIDATE_ACCURACY` (default `0.88`) and `CANDIDATE_STAGE` (default `Staging`). MLflow assigns the next version number automatically.
+
+> **Separation of concerns:** registering a candidate is a **training/CI** action, deliberately kept *outside* the steward. The Pipeline Steward's gated-write applier is bound only to `transition-stage` on `phi-4-mini-meshops` — it can promote/archive existing versions, never mint new ones. These Jobs stand in for the pipeline that would produce a candidate upstream.
+
+Also clean any HITL audit residue (`hitl-proposals/pw_*.md`) merged onto `main` during testing if you want a pristine repo:
+
+```bash
+git rm hitl-proposals/pw_*.md && git commit -m "chore: clean HITL audit residue" && git push
+```
+
 ## 7. Roll back to read-only
 
 ```bash

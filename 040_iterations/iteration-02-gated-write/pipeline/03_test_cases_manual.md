@@ -25,6 +25,8 @@
 
 **Pass:** v3 moves to Production only *after* step 4, and the audit trail records proposal → execution.
 
+> **Re-running this test:** a successful promote consumes the Staging candidate. To demo it again, reset the registry (`kubectl apply -f helm/pipeline/extras/mlflow-seed.yaml`) or append a fresh candidate (`kubectl apply -f helm/pipeline/extras/mlflow-add-candidate.yaml`). See §6b of the [deployment guide](05_deployment_guide.md).
+
 ---
 
 ## TC-P2 — Reject flow (close the PR)
