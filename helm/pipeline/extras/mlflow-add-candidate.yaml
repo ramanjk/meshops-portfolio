@@ -1,0 +1,132 @@
+# MeshOps — one-shot Job that registers ONE new candidate model version and
+# transitions it to Staging, WITHOUT wiping the existing registry (unlike
+# mlflow-seed.yaml, which nukes + reseeds v1/v2/v3).
+#
+# This mirrors the real-world flow: a training/CI job produces a new candidate
+# and parks it in Staging for the Pipeline Steward to observe and (via gated
+# write) promote. The steward itself CANNOT create versions — that is
+# deliberately kept outside its blast radius; it only transitions existing
+# versions between stages.
+#
+# Tune the candidate via the CANDIDATE_ACCURACY / CANDIDATE_STAGE env vars
+# below (defaults: accuracy 0.88, stage Staging). Version number is assigned
+# automatically by MLflow (next in sequence).
+#
+# Apply with:
+#   kubectl delete job mlflow-add-candidate -n mlflow --ignore-not-found
+#   kubectl apply -f helm/pipeline/extras/mlflow-add-candidate.yaml
+#   kubectl -n mlflow wait --for=condition=complete job/mlflow-add-candidate --timeout=180s
+#   kubectl -n mlflow logs job/mlflow-add-candidate
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlflow-add-candidate-script
+  namespace: mlflow
+data:
+  add_candidate.py: |
+    """Register ONE new candidate model version and transition its stage."""
+    import os
+    import time
+
+    import mlflow
+    from mlflow.tracking import MlflowClient
+
+    TRACKING_URI = "http://mlflow.mlflow.svc.cluster.local:5000"
+    MODEL_NAME = "phi-4-mini-meshops"
+    ACCURACY = float(os.environ.get("CANDIDATE_ACCURACY", "0.88"))
+    STAGE = os.environ.get("CANDIDATE_STAGE", "Staging")
+
+    mlflow.set_tracking_uri(TRACKING_URI)
+    client = MlflowClient(tracking_uri=TRACKING_URI)
+
+    # The registered model must already exist (seed it first if not).
+    try:
+        client.get_registered_model(MODEL_NAME)
+    except Exception:  # noqa: BLE001
+        client.create_registered_model(
+            MODEL_NAME,
+            description="MeshOps SLM served by the Inference Steward's KAITO Workspace.",
+        )
+        print(f"[add] created registered model {MODEL_NAME}")
+
+    mlflow.set_experiment("phi-4-mini-meshops-training")
+
+    # Next version number is informational; MLflow assigns it on create.
+    existing = client.search_model_versions(f"name='{MODEL_NAME}'")
+    next_v = max((int(v.version) for v in existing), default=0) + 1
+
+    with mlflow.start_run(run_name=f"train-v{next_v}") as run:
+        mlflow.log_metric("eval_accuracy", ACCURACY)
+        mlflow.log_param("base_model", "microsoft/Phi-4-mini-instruct")
+        mlflow.log_dict({"note": f"synthetic candidate v{next_v}"}, "candidate.json")
+        source = f"runs:/{run.info.run_id}/candidate.json"
+        mv = client.create_model_version(
+            name=MODEL_NAME,
+            source=source,
+            run_id=run.info.run_id,
+            description=f"Candidate v{next_v} (eval_accuracy={ACCURACY}).",
+        )
+        # Wait for the version to be READY before transitioning its stage.
+        for _ in range(30):
+            got = client.get_model_version(MODEL_NAME, mv.version)
+            if got.status == "READY":
+                break
+            time.sleep(1)
+        client.transition_model_version_stage(
+            name=MODEL_NAME, version=mv.version, stage=STAGE
+        )
+        print(f"[add] v{mv.version} (eval_accuracy={ACCURACY}) -> {STAGE}")
+
+    versions = client.search_model_versions(f"name='{MODEL_NAME}'")
+    print(f"[add] done — {len(versions)} versions:")
+    for v in sorted(versions, key=lambda x: int(x.version), reverse=True):
+        print(f"  v{v.version}: {v.current_stage}")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlflow-add-candidate
+  namespace: mlflow
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mlflow-add-candidate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: add-candidate
+          image: ghcr.io/mlflow/mlflow:v2.16.2
+          command: ["python", "/scripts/add_candidate.py"]
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow.mlflow.svc.cluster.local:5000"
+            - name: HOME
+              value: /tmp
+            # Tune the candidate here (or override with `kubectl set env`):
+            - name: CANDIDATE_ACCURACY
+              value: "0.88"
+            - name: CANDIDATE_STAGE
+              value: "Staging"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: script
+          configMap:
+            name: mlflow-add-candidate-script
+        - name: tmp
+          emptyDir: {}
