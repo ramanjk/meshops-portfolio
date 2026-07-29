@@ -26,7 +26,9 @@ Not a menu of allowed verbs — *any* mutation (create / patch / delete / scale 
 4. **RBAC backstop.** The executor uses a **write-but-bounded** identity (namespaced Role; no Secrets/RBAC/cluster-scoped verbs) so an approved-but-wrong request *physically cannot* exceed scope.
 5. **Immutable, append-only audit.** Every proposal + decision + outcome is recorded (structured log + OTel span; immutable Azure Storage in production).
 
-**Approval channels are pluggable** on one shared gate + audit: interactive **chat approval** (synchronous — this iteration's first surface), **GitHub PR** and **Slack** (asynchronous). ADR-0011 refines the earlier "PR + Slack only" stance.
+**Approval channels are pluggable** on one shared gate + audit: interactive **chat approval** (synchronous — this iteration's first surface), **GitHub PR** (asynchronous — merge = approve, close = reject) and **Slack** (designed, not yet built). ADR-0011 refines the earlier "PR + Slack only" stance. The pipeline & quality writers run live on the **GitHub-PR** channel.
+
+**Shared HITL spine.** Inference (the first writer) grew its gate in-tree. To avoid three copies, the domain-agnostic machinery is now the shared package **[`src/stewards/hitl/`](../../src/stewards/hitl/)** (`Proposal`/`WriteGate`/`Applier`/`AuditSink`, pluggable `channels.py`, `serve_support.py`). Each steward supplies only its two domain pieces — a `Proposal` subclass and an `Applier`. Pipeline and quality are built entirely on this spine; inference keeps its original copy for zero-regression.
 
 **Capability flag.** Write scope is off by default (`write_enabled=false`) — a steward is byte-for-byte its Iteration-1 read-only self until write is deliberately enabled. Enabling write never removes the gate; it only makes the gate reachable.
 
@@ -34,21 +36,23 @@ Not a menu of allowed verbs — *any* mutation (create / patch / delete / scale 
 
 | Steward ↓ / Iteration → | **1 · read-only** | **2 · gated write (HITL)** | **3+ · broader** |
 |---|---|---|---|
-| **Inference** | ✅ [read-only](../iteration-01-read-only/inference/) | 🚧 [`inference/`](inference/) — first writer | ⬜ |
-| **Pipeline** | ✅ [read-only](../iteration-01-read-only/pipeline/) | ⬜ (registry promotion via PR channel) | ⬜ |
-| **Quality** | ✅ [read-only](../iteration-01-read-only/quality/) | ⬜ (prompt-version PR) | ⬜ |
+| **Inference** | ✅ [read-only](../iteration-01-read-only/inference/) | ✅ [`inference/`](inference/) — first writer (chat + PR) | ⬜ |
+| **Pipeline** | ✅ [read-only](../iteration-01-read-only/pipeline/) | ✅ [`pipeline/`](pipeline/) — registry promotion (PR channel) | ⬜ |
+| **Quality** | ✅ [read-only](../iteration-01-read-only/quality/) | ✅ [`quality/`](quality/) — trace annotation (PR channel) | ⬜ |
 | **SRE** | ⬜ | ⬜ | ⬜ |
 | **Gateway** | ⬜ | ⬜ | ⬜ |
 | **Security** | ⬜ | ⬜ | ⬜ |
 
-**Inference is the first steward to graduate to gated write.** The demo that motivated it: in Iteration 1, asking the steward to *"create a test pod"* was refused ("I'm read-only"). In Iteration 2, the same request becomes *propose → preview → you approve → it acts → it's audited.*
+**Three stewards now graduated to gated write.** Inference was first (*"create a test pod"* → propose/preview/approve/act). Pipeline promotes a model version in the MLflow registry; Quality annotates a Langfuse trace with a reviewed score — both **propose → open a PR → you merge → deterministic code applies it → it's audited**, never the model.
 
-## Documents in this folder (inference)
+## Documents in this folder
 
-| Doc | Purpose |
+Each writer has the same five-doc bundle (use-case → implementation → manual tests → automated tests → deployment):
+
+| Steward | Bundle |
 |---|---|
-| [`inference/01_use_case.md`](inference/01_use_case.md) | The story of the gated-write slice — what the steward now does and where it stops. |
-| `inference/02_implementation_guide.md` | Every file written for the write gate, with real code (inference house style). |
-| `inference/03_test_cases_manual.md` | Manual test script — the propose → approve → act and propose → reject flows. |
-| `inference/04_test_cases_automated.md` | The automated test suite for the gate, schema, executor, and RBAC-denied path. |
-| `inference/05_deployment_guide.md` | Enabling `write_enabled`, applying the bounded RBAC role, and going live. |
+| **Inference** | [`inference/`](inference/) — [use case](inference/01_use_case.md) · [implementation](inference/02_implementation_guide.md) · [manual tests](inference/03_test_cases_manual.md) · [automated tests](inference/04_test_cases_automated.md) · [deployment](inference/05_deployment_guide.md) |
+| **Pipeline** | [`pipeline/`](pipeline/) — [use case](pipeline/01_use_case.md) · [implementation](pipeline/02_implementation_guide.md) · [manual tests](pipeline/03_test_cases_manual.md) · [automated tests](pipeline/04_test_cases_automated.md) · [deployment](pipeline/05_deployment_guide.md) |
+| **Quality** | [`quality/`](quality/) — [use case](quality/01_use_case.md) · [implementation](quality/02_implementation_guide.md) · [manual tests](quality/03_test_cases_manual.md) · [automated tests](quality/04_test_cases_automated.md) · [deployment](quality/05_deployment_guide.md) |
+
+> The **implementation guides** for pipeline and quality describe the shared [`stewards.hitl`](../../src/stewards/hitl/) package once (in the [pipeline guide](pipeline/02_implementation_guide.md)) and then only their domain-specific `Proposal`/`Applier`/tool — read the pipeline implementation guide first if you want the full spine walkthrough.
