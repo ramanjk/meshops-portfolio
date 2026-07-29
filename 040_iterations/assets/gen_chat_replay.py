@@ -167,3 +167,65 @@ build(convo2, "Inference Steward — gated write + HITL (iteration 2)",
       ("MeshOps — Inference Steward · Iteration 2",
        "Stewards propose. Humans dispose. — with teeth.",
        "Approve · Reject · Fail-closed  ·  every action audited"))
+
+# ================= PIPELINE STEWARD (MLflow Model Registry) =================
+# ---- Pipeline Iteration 1: read-only (real tested Q&A) ----
+convo_p1 = [
+    {"role": "user", "text": "List all versions of phi-4-mini-meshops and their stages."},
+    {"role": "bot",  "text": "v3 — Staging   (eval_accuracy 0.86)\nv2 — Production (eval_accuracy 0.83)\nv1 — Archived  (eval_accuracy 0.71)"},
+    {"role": "user", "text": "Which version is in Production, and its eval accuracy?"},
+    {"role": "bot",  "text": "Version 2 is in Production — eval_accuracy 0.83.", "accent": BOT_ACCENT},
+    {"role": "user", "text": "Should we promote v3? Go ahead and do it."},
+    {"role": "bot",  "text": "I observe and explain promotions — I don't make or\npropose changes. v3 (0.86) does out-score v2; the\ndecision is yours.", "accent": (210, 90, 70)},
+]
+build(convo_p1, "Pipeline Steward — read-only (iteration 1)",
+      "pipe1.gif",
+      ("MeshOps — Pipeline Steward · Iteration 1",
+       "Stewards propose. Humans dispose.",
+       "Read-only over the MLflow Model Registry · live state"))
+
+# ---- Pipeline Iteration 2: gated write + HITL (real tested outcomes) ----
+convo_p2 = [
+    {"role": "user", "text": "Promote phi-4-mini-meshops v3 from Staging to Production."},
+    {"role": "bot",  "text": "Proposal pw_f2695e61 — transition v3 Staging → Production.\nDry-run: no change made. Review & merge the PR to approve."},
+    {"role": "badge", "text": "GitHub PR #12 merged by ramanjk  →  approved"},
+    {"role": "bot",  "text": "Executed ✓  phi-4-mini-meshops v3 is now in stage\nProduction.  Approver: ramanjk.", "accent": BOT_ACCENT},
+    {"role": "user", "text": "Now promote some-other-model too."},
+    {"role": "bot",  "text": "Denied — only phi-4-mini-meshops is in scope.\nThe applier is bound to one registered model.", "accent": (210, 90, 70)},
+]
+build(convo_p2, "Pipeline Steward — gated write + HITL (iteration 2)",
+      "pipe2.gif",
+      ("MeshOps — Pipeline Steward · Iteration 2",
+       "Stewards propose. Humans dispose. — with teeth.",
+       "One-model bound · merge = approve · every action audited"))
+
+# ================= QUALITY STEWARD (Langfuse traces + evals) =================
+# ---- Quality Iteration 1: read-only (real tested Q&A) ----
+convo_q1 = [
+    {"role": "user", "text": "Summarize recent eval scores and traces."},
+    {"role": "bot",  "text": "relevance ~0.75–0.76   ·   faithfulness ~0.60–0.61\nlatest traces from pipeline.steward.chat, healthy latency."},
+    {"role": "user", "text": "What's the quality trend for the served model?"},
+    {"role": "bot",  "text": "Both signals drifting DOWN over the last 20 evals —\nan early sign of quality drift worth watching.", "accent": (210, 90, 70)},
+    {"role": "user", "text": "Attach a better faithfulness score to that trace."},
+    {"role": "bot",  "text": "I only monitor and report — I don't write scores.\nThe annotation call isn't mine to make.", "accent": (210, 90, 70)},
+]
+build(convo_q1, "Quality Steward — read-only (iteration 1)",
+      "qual1.gif",
+      ("MeshOps — Quality Steward · Iteration 1",
+       "Stewards propose. Humans dispose.",
+       "Read-only over Langfuse traces & evals · live signals"))
+
+# ---- Quality Iteration 2: gated write + HITL (real tested outcomes) ----
+convo_q2 = [
+    {"role": "user", "text": "Annotate trace 09b7861a… with faithfulness = 0.55."},
+    {"role": "bot",  "text": "Proposal pw_85560f20 — score faithfulness=0.55 on trace\n09b7861a…  Dry-run OK. Review & merge the PR to approve."},
+    {"role": "badge", "text": "GitHub PR #13 merged by ramanjk  →  approved"},
+    {"role": "bot",  "text": "Executed ✓  score 'faithfulness'=0.55 attached\n(score id 49df94fd…).  Approver: ramanjk.", "accent": BOT_ACCENT},
+    {"role": "user", "text": "Now set faithfulness to 1.7."},
+    {"role": "bot",  "text": "Denied — scores are bound to 0.0–1.0.\n1.7 is out of range; nothing written.", "accent": (210, 90, 70)},
+]
+build(convo_q2, "Quality Steward — gated write + HITL (iteration 2)",
+      "qual2.gif",
+      ("MeshOps — Quality Steward · Iteration 2",
+       "Stewards propose. Humans dispose. — with teeth.",
+       "Score bounded 0.0–1.0 · merge = approve · every action audited"))

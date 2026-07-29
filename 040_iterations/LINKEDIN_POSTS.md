@@ -174,6 +174,10 @@ Same steward. Same read safety. Now a 𝗴𝗮𝘁𝗲𝗱 𝗵𝗮𝗻𝗱 — 
 ============================================================
 POST #3 — STEWARD #2: THE PIPELINE STEWARD (+ how the two connect)
 ============================================================
+Media: attach 040_iterations/assets/pipeline-iter1-replay.mp4 (or .gif) — a
+chat-replay of the REAL tested Q&A (list versions/stages → which is Production →
+declines to promote). Iter-2 + Quality replays also exist in assets/ for the
+follow-up posts (pipeline-iter2, quality-iter1, quality-iter2 · mp4 + gif).
 >>>
 𝗦𝘁𝗲𝘄𝗮𝗿𝗱 #𝟮 𝗶𝘀 𝗹𝗶𝘃𝗲: 𝘁𝗵𝗲 𝗣𝗶𝗽𝗲𝗹𝗶𝗻𝗲 𝗦𝘁𝗲𝘄𝗮𝗿𝗱. 🔗
 
