@@ -57,10 +57,11 @@ After 11 years in Kubernetes (Kubestronaut 🚀), this is my deliberate stretch 
 ============================================================
 POST #2 — STEWARD #1: THE INFERENCE STEWARD (Iteration 1 · read-only)
 ============================================================
-Media: attach 040_iterations/assets/inference-iter1-replay.gif — a chat-replay
-of the REAL tested Q&A (engine/preset/128k → healthy? → refuses to scale). It's
-a faithful re-creation from the tested transcript (built by gen_chat_replay.py),
-so you can post it even with the cluster stopped. LinkedIn auto-plays GIFs.
+Media: attach 040_iterations/assets/inference-iter1-replay.mp4 (preferred — crisper,
+LinkedIn native video) or inference-iter1-replay.gif — a chat-replay of the REAL
+tested Q&A (engine/preset/128k → healthy? → refuses to scale). Faithful
+re-creation from the tested transcript (built by gen_chat_replay.py), so you can
+post it even with the cluster stopped.
 >>>
 𝗠𝗲𝗲𝘁 𝘁𝗵𝗲 𝗳𝗶𝗿𝘀𝘁 𝗠𝗲𝘀𝗵𝗢𝗽𝘀 𝘀𝘁𝗲𝘄𝗮𝗿𝗱: 𝘁𝗵𝗲 𝗜𝗻𝗳𝗲𝗿𝗲𝗻𝗰𝗲 𝗦𝘁𝗲𝘄𝗮𝗿𝗱. 🛰️
 
@@ -120,10 +121,11 @@ Next: I let this same steward 𝗮𝗰𝘁 — but only through a human gate. Th
 ============================================================
 POST #2B — INFERENCE STEWARD, ITERATION 2 (gated write + HITL)
 ============================================================
-Media: attach 040_iterations/assets/inference-iter2-replay.gif — a chat-replay
-of the REAL gated-write round-trip: propose → "PR merged by ramanjk → approved"
-→ "Executed ✓" → then the fail-closed "scale" denial (KAITO immutable). Built
-from the tested transcript via gen_chat_replay.py; posts fine cluster-down.
+Media: attach 040_iterations/assets/inference-iter2-replay.mp4 (preferred — crisper,
+LinkedIn native video) or inference-iter2-replay.gif — a chat-replay of the REAL
+gated-write round-trip: propose → "PR merged by ramanjk → approved" → "Executed ✓"
+→ then the fail-closed "scale" denial (KAITO immutable). Built from the tested
+transcript via gen_chat_replay.py; posts fine cluster-down.
 >>>
 𝗟𝗮𝘀𝘁 𝘄𝗲𝗲𝗸 𝗺𝘆 𝗔𝗜 𝘀𝘁𝗲𝘄𝗮𝗿𝗱 𝗰𝗼𝘂𝗹𝗱 𝗼𝗻𝗹𝘆 𝗹𝗼𝗼𝗸. 𝗡𝗼𝘄 𝗶𝘁 𝗰𝗮𝗻 𝗮𝗰𝘁 — 𝗯𝘂𝘁 𝗼𝗻𝗹𝘆 𝗶𝗳 𝗜 𝘀𝗮𝘆 𝘀𝗼. 🔐
 
