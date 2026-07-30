@@ -1,0 +1,90 @@
+image:
+  repository: ""          # ${ACR_LOGIN_SERVER}/meshops/hello-sre
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+namespace: meshops
+
+# Run model for the Deployment. 0 = one-shot (pod completes and, under a
+# Deployment, restarts). A positive value runs the steward as a long-lived loop
+# so the pod stays Running. Ignored when chat.enabled is true.
+runIntervalSeconds: 0
+
+# Interactive chat interface. When enabled, the pod serves the SRE Steward's
+# persona over HTTP (with a minimal web UI at /) instead of running correlation
+# cycles, so you can talk to it and exercise its three read-only tools.
+chat:
+  enabled: true
+  port: 8080
+  service:
+    # ClusterIP (port-forward only) or LoadBalancer (Azure public LB).
+    type: LoadBalancer
+    annotations: {}
+    # SECURITY: the chat endpoint has no auth. Restrict who can reach the public
+    # IP by listing CIDRs here. Empty list = open to the internet.
+    loadBalancerSourceRanges: []
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    tls:
+      enabled: false
+      secretName: ""
+
+serviceAccount:
+  name: hello-sre
+  # Workload Identity client ID — filled by Terraform output / install time.
+  clientId: ""
+
+# ---- Iteration 2: gated write (HITL) ----------------------------------------
+# Master switch for the write scope. When false (default) the steward is exactly
+# its read-only self: no propose_scale tool, read-only persona, and NO write
+# RBAC is created. When true, the deployment gets WRITE_ENABLED + the gated-write
+# persona, and a *namespaced, write-but-bounded* Role/RoleBinding is created in
+# writeNamespace (templates/write-rbac.yaml) granting deployments/scale. The gate
+# + human approval are always required regardless (ADR-0011).
+writeEnabled: false
+# The single namespace the steward's scaler may mutate. MUST match SCALE_NAMESPACE
+# (the app-level guard) — both are set from this value in deployment.yaml.
+writeNamespace: meshops-workloads
+# HITL approval channel (ADR-0011, pluggable on the same gate + executor + audit):
+#   "chat"      -> synchronous Approve/Reject in the chat UI (default).
+#   "github_pr" -> the steward opens a PR per proposal; MERGE = approve, CLOSE =
+#                  reject. Requires github.* set and a GH_TOKEN (repo scope).
+writeApprovalChannel: chat
+
+# The domain guard bounds for the gated Deployment scale. Enforced in-app BEFORE
+# the gate stores a proposal (a violating request is denied, never approvable),
+# with the namespaced writer RBAC Role as the hard backstop.
+scale:
+  # Comma-separated Deployment names the steward may scale. Empty = any
+  # Deployment in writeNamespace (still RBAC-bounded to that namespace).
+  allowedDeployments: ""
+  minReplicas: 0
+  maxReplicas: 10
+
+github:
+  repo: ""                # owner/repo proposal PRs are opened against
+  baseBranch: main
+  proposalsDir: hitl-proposals
+  pollSeconds: 20
+
+keyVault:
+  name: ""                # ${KV_NAME}, filled at helm install time
+  tenantId: ""
+
+env:
+  azureOpenAiEndpoint: ""
+  azureOpenAiChatDeploymentName: "gpt-4.1"
+  langfuseHost: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+  aksResourceId: ""
+  azureMonitorWorkspaceQueryUrl: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi

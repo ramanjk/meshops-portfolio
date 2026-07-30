@@ -1,0 +1,6 @@
+apiVersion: v2
+name: meshops-sre
+description: MeshOps SRE Steward — ships the hello-sre AIOps steward (correlates Prometheus + AKS + Langfuse; Iteration 2 gated Deployment scale).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
