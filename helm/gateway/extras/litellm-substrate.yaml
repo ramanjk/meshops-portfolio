@@ -1,0 +1,133 @@
+# LiteLLM proxy — the Gateway Steward's substrate (routing + per-route budgets).
+# Two logical routes over the single Azure OpenAI gpt-4.1 deployment, each with
+# its own per-route budget cap (model_info.max_budget) — the config surface the
+# Gateway Steward reads (iter-1) and proposes budget changes to (iter-2, gated).
+#
+# Auth to AOAI is KEYLESS: the AOAI resource has disableLocalAuth=true, so LiteLLM
+# authenticates with Entra ID (workload identity) exactly like the stewards. The
+# litellm ServiceAccount is federated to the msi-hello-inference UAMI, and
+# litellm_settings.enable_azure_ad_token_refresh makes LiteLLM mint AOAI tokens
+# via DefaultAzureCredential. Only the LiteLLM master-key lives in a Secret
+# created out-of-band (NOT committed): kubectl create secret generic litellm-secrets ...
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm
+  namespace: meshops-workloads
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: gateway-substrate
+  annotations:
+    azure.workload.identity/client-id: "a6fb9f44-93e2-46bc-b5ed-1ab779d26a4c"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: meshops-workloads
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: gateway-substrate
+data:
+  config.yaml: |
+    model_list:
+      - model_name: chat-premium
+        litellm_params:
+          model: azure/gpt-4.1
+          api_base: https://aoai-meshops-99281a.openai.azure.com/
+          api_version: "2024-10-21"
+        model_info:
+          id: chat-premium
+          max_budget: 50.0
+      - model_name: chat-economy
+        litellm_params:
+          model: azure/gpt-4.1
+          api_base: https://aoai-meshops-99281a.openai.azure.com/
+          api_version: "2024-10-21"
+        model_info:
+          id: chat-economy
+          max_budget: 5.0
+    litellm_settings:
+      drop_params: true
+      num_retries: 2
+      enable_azure_ad_token_refresh: true
+    router_settings:
+      routing_strategy: simple-shuffle
+      fallbacks:
+        - chat-economy: ["chat-premium"]
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: meshops-workloads
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: gateway-substrate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+        app.kubernetes.io/component: gateway-substrate
+        azure.workload.identity/use: "true"
+      annotations:
+        checksum/config: PLACEHOLDER
+    spec:
+      serviceAccountName: litellm
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-stable
+          args: ["--config", "/etc/litellm/config.yaml", "--port", "4000", "--num_workers", "1"]
+          ports:
+            - containerPort: 4000
+              name: http
+          env:
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-secrets
+                  key: master-key
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: meshops-workloads
+  labels:
+    app.kubernetes.io/name: litellm
+    app.kubernetes.io/component: gateway-substrate
+spec:
+  selector:
+    app.kubernetes.io/name: litellm
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000

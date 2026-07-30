@@ -1,0 +1,6 @@
+apiVersion: v2
+name: meshops-gateway
+description: MeshOps Gateway Steward — ships the hello-gateway LLM-routing/cost steward (reads the LiteLLM proxy plane; Iteration 2 gated per-route budget-cap change).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

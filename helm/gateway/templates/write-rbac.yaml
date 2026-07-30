@@ -1,0 +1,71 @@
+{{- if .Values.writeEnabled }}
+{{/*
+Iteration 2 (ADR-0011) — the write-but-bounded RBAC backstop.
+
+This is the HARD floor under the HITL gate. Even after a human approves, the
+deterministic executor (LiteLLMBudgetApplier) runs `kubectl` using this
+ServiceAccount's token, so an approved-but-wrong (or prompt-injected) request is
+physically capped by what this Role grants.
+
+Deliberately bounded to the Gateway steward's ONE gated write — changing a
+LiteLLM route's per-route budget cap:
+  * It is a NAMESPACED Role in writeNamespace — it therefore CANNOT touch
+    cluster-scoped resources (nodes, namespaces, CRDs, ClusterRoles, …) at all.
+  * It grants exactly the surface the applier needs: read + patch the LiteLLM
+    config `configmaps` (to read the current budget for the dry-run preview and
+    write the new cap), plus read + patch `deployments` (to `kubectl rollout
+    restart` the proxy so it reloads the config). Nothing else — no pods,
+    secrets, statefulsets, or other resources.
+  * It NEVER lists secrets or rbac.authorization.k8s.io objects — so the steward
+    can neither read nor mutate credentials or escalate its own privileges.
+
+Unlike the SRE steward, the Gateway steward's READ path does NOT use kubectl (it
+reads the LiteLLM proxy over HTTP via litellm-mcp), so there is no broad read
+RBAC in this chart — this Role is the ONLY Kubernetes permission it holds, and it
+exists only when writeEnabled=true.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.serviceAccount.name }}-writer
+  namespace: {{ .Values.writeNamespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
+    app.kubernetes.io/component: steward
+    meshops.io/iteration: "2-gated-write"
+rules:
+  # Read + patch the LiteLLM config ConfigMap (read for the dry-run preview of
+  # the current budget cap; patch to write the new cap). The applier targets a
+  # single ConfigMap, but Role rules cannot be name-scoped for `list`, so this is
+  # bounded to the `configmaps` resource within writeNamespace only.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "patch", "update"]
+  # Read + patch the LiteLLM proxy Deployment so `kubectl rollout restart` can
+  # trigger a config reload. `rollout restart` patches the pod-template
+  # annotation, so `patch` on `deployments` is required (not deployments/scale).
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  # NOTE: pods, secrets, statefulsets, rbac.authorization.k8s.io, and ALL
+  # cluster-scoped resources are intentionally absent. A namespaced Role cannot
+  # grant the latter anyway.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}-writer
+  namespace: {{ .Values.writeNamespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
+    app.kubernetes.io/component: steward
+    meshops.io/iteration: "2-gated-write"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}-writer
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace }}
+{{- end }}

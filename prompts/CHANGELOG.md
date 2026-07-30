@@ -1,5 +1,27 @@
 # Prompt CHANGELOG
 
+## 1.7.0
+- Added the **Gateway Steward** (`hello-gateway`) persona trio —
+  `gateway-steward.system.md`, `gateway-steward.chat.md`, and
+  `gateway-steward.gated-write.chat.md`. This is the fifth steward and the first
+  **LLM routing / cost governance** steward. Its substrate is the platform's
+  **LiteLLM proxy**: named **routes** (model groups) over the platform's models,
+  each with a per-route **budget cap** (`max_budget`) and an upstream deployment.
+  - Iteration 1 (read-only): observe → assess → report a routing-plane posture
+    (routes, per-route budget caps, upstream health) via the in-repo
+    `litellm-mcp` shim (`list_routes`, `route_health`). Same three no-write
+    guarantees and non-negotiable identity anchoring as the other stewards;
+    `requires_hitl` forced false; `proposed_adjustment` explicitly scoped as
+    *advice*, not an action.
+  - Iteration 2 (gated write + HITL): `propose_budget` — change a route's
+    **per-route budget cap**, bounded to an allow-listed route set and a budget
+    range, actuated by deterministic code (patch the LiteLLM config ConfigMap +
+    roll the proxy) under a namespaced writer Role — never the LLM. Reuses the
+    shared `src/stewards/hitl/` propose→approve→apply→audit spine and pluggable
+    chat/github_pr channels (ADR-0011: *no autonomous actuation*). Loaded only
+    when `write_enabled=true`; otherwise the read-only `gateway-steward.chat.md`
+    persona is used unchanged.
+
 ## 1.6.0
 - Added the **SRE Steward** (`hello-sre`) persona trio —
   `sre-steward.system.md`, `sre-steward.chat.md`, and
