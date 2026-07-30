@@ -39,11 +39,11 @@ Not a menu of allowed verbs — *any* mutation (create / patch / delete / scale 
 | **Inference** | ✅ [read-only](../iteration-01-read-only/inference/) | ✅ [`inference/`](inference/) — first writer (chat + PR) | ⬜ |
 | **Pipeline** | ✅ [read-only](../iteration-01-read-only/pipeline/) | ✅ [`pipeline/`](pipeline/) — registry promotion (PR channel) | ⬜ |
 | **Quality** | ✅ [read-only](../iteration-01-read-only/quality/) | ✅ [`quality/`](quality/) — trace annotation (PR channel) | ⬜ |
-| **SRE** | ⬜ | ⬜ | ⬜ |
+| **SRE** | ✅ [read-only](../iteration-01-read-only/sre/) | ✅ [`sre/`](sre/) — Deployment scale (PR channel) | ⬜ |
 | **Gateway** | ⬜ | ⬜ | ⬜ |
 | **Security** | ⬜ | ⬜ | ⬜ |
 
-**Three stewards now graduated to gated write.** Inference was first (*"create a test pod"* → propose/preview/approve/act). Pipeline promotes a model version in the MLflow registry; Quality annotates a Langfuse trace with a reviewed score — both **propose → open a PR → you merge → deterministic code applies it → it's audited**, never the model.
+**Four stewards now graduated to gated write.** Inference was first (*"create a test pod"* → propose/preview/approve/act). Pipeline promotes a model version in the MLflow registry; Quality annotates a Langfuse trace with a reviewed score; **SRE is the first correlation/AIOps writer**, and its gated write is Deployment replica scale. Each follows **propose → open a PR → you merge → deterministic code applies it → it's audited**, never the model.
 
 ## Documents in this folder
 
@@ -54,5 +54,6 @@ Each writer has the same five-doc bundle (use-case → implementation → manual
 | **Inference** | [`inference/`](inference/) — [use case](inference/01_use_case.md) · [implementation](inference/02_implementation_guide.md) · [manual tests](inference/03_test_cases_manual.md) · [automated tests](inference/04_test_cases_automated.md) · [deployment](inference/05_deployment_guide.md) |
 | **Pipeline** | [`pipeline/`](pipeline/) — [use case](pipeline/01_use_case.md) · [implementation](pipeline/02_implementation_guide.md) · [manual tests](pipeline/03_test_cases_manual.md) · [automated tests](pipeline/04_test_cases_automated.md) · [deployment](pipeline/05_deployment_guide.md) |
 | **Quality** | [`quality/`](quality/) — [use case](quality/01_use_case.md) · [implementation](quality/02_implementation_guide.md) · [manual tests](quality/03_test_cases_manual.md) · [automated tests](quality/04_test_cases_automated.md) · [deployment](quality/05_deployment_guide.md) |
+| **SRE** | [`sre/`](sre/) — [use case](sre/01_use_case.md) · [implementation](sre/02_implementation_guide.md) · [manual tests](sre/03_test_cases_manual.md) · [automated tests](sre/04_test_cases_automated.md) · [deployment](sre/05_deployment_guide.md) |
 
 > The **implementation guides** for pipeline and quality describe the shared [`stewards.hitl`](../../src/stewards/hitl/) package once (in the [pipeline guide](pipeline/02_implementation_guide.md)) and then only their domain-specific `Proposal`/`Applier`/tool — read the pipeline implementation guide first if you want the full spine walkthrough.

@@ -24,13 +24,13 @@ MeshOps grows along **two independent axes**, and it's important not to conflate
 | **Inference** | ✅ [`inference/`](inference/) | 🚧 [gated-write](../iteration-02-gated-write/inference/) | ⬜ |
 | **Pipeline** | ✅ [`pipeline/`](pipeline/) | ⬜ (natural first writer: propose a registry promotion) | ⬜ |
 | **Quality** | ✅ [`quality/`](quality/) | ⬜ (propose a prompt-version PR) | ⬜ |
-| **SRE** | ⬜ | ⬜ | ⬜ |
+| **SRE** | ✅ [`sre/`](sre/) — AIOps correlation (Prometheus × AKS × Langfuse) | ✅ [gated-write](../iteration-02-gated-write/sre/) — Deployment scale | ⬜ |
 | **Gateway** | ⬜ | ⬜ | ⬜ |
 | **Security** | ⬜ | ⬜ | ⬜ |
 
-**Iteration 1 is complete for three stewards.** The next step is a *depth* move, not a fourth read-only clone: take one steward (Pipeline is the natural choice — its "propose a promotion" is the cleanest first gated write) into **Iteration 2**, in `../iteration-02-gated-write/` (to be created).
+**Iteration 1 is complete for four stewards.** Inference, Pipeline, Quality, and SRE now cover serving, registry, trace quality, and cross-substrate AIOps correlation. The next moves are depth moves in `../iteration-02-gated-write/`, plus later breadth moves for Gateway and Security.
 
-## The three read-only builds
+## The four read-only builds
 
 Each subfolder is one steward's Iteration-1 deliverable bundle (same five-doc shape):
 
@@ -39,6 +39,7 @@ Each subfolder is one steward's Iteration-1 deliverable bundle (same five-doc sh
 | [**Inference**](inference/) | KAITO Workspace (replicas, GPU) | *Is the deployed model serving healthily right now?* |
 | [**Pipeline**](pipeline/) | MLflow Model Registry (versions, stages) | *Which version should be deployed, and is the next candidate ready?* |
 | [**Quality**](quality/) | Langfuse project (traces + eval scores) | *Is the model's output any good, and is it drifting?* |
+| [**SRE**](sre/) | Azure Managed Prometheus + AKS state + Langfuse | *Do metrics, cluster state, and LLM traces correlate into an incident?* |
 
 ## The load-bearing invariant of Iteration 1
 
