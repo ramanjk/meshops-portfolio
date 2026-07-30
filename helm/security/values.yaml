@@ -1,0 +1,93 @@
+image:
+  repository: ""          # ${ACR_LOGIN_SERVER}/meshops/hello-security
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+namespace: meshops
+
+# Run model for the Deployment. 0 = one-shot (pod completes and, under a
+# Deployment, restarts). A positive value runs the steward as a long-lived loop
+# so the pod stays Running. Ignored when chat.enabled is true.
+runIntervalSeconds: 0
+
+# Interactive chat interface. When enabled, the pod serves the Security Steward's
+# persona over HTTP (with a minimal web UI at /) instead of running observe
+# cycles, so you can talk to it and exercise its proposal-queue read tool.
+chat:
+  enabled: true
+  port: 8080
+  service:
+    # ClusterIP (port-forward only) or LoadBalancer (Azure public LB).
+    type: LoadBalancer
+    annotations: {}
+    # SECURITY: the chat endpoint has no auth. Restrict who can reach the public
+    # IP by listing CIDRs here. Empty list = open to the internet.
+    loadBalancerSourceRanges: []
+  ingress:
+    enabled: false
+    className: ""
+    host: ""
+    annotations: {}
+    tls:
+      enabled: false
+      secretName: ""
+
+serviceAccount:
+  name: hello-security
+  # Workload Identity client ID — filled by Terraform output / install time.
+  clientId: ""
+
+# GitHub — the Security Steward's read substrate (the HITL *proposal queue* = the
+# repo's open PRs, read via github-sec-mcp) AND the target of its iter-2
+# quarantine write (a single label add). REQUIRED IN BOTH ITERATIONS: the read
+# shim reads the queue in read-only mode too. The token is delivered via the
+# 'github-token' Secret (key 'token') — the same repo-scoped PAT the other
+# stewards use for their github_pr channel.
+github:
+  repo: ""                # owner/repo whose open PRs are the proposal queue
+  # Head-branch prefix marking a peer-steward HITL proposal PR (for classifying
+  # confused-deputy / cross-steward risk). Matches the other stewards' hitl/ dir.
+  proposalBranchPrefix: "hitl/"
+  # --- github_pr approval channel only (ignored when writeApprovalChannel=chat):
+  baseBranch: main
+  proposalsDir: hitl-proposals
+  pollSeconds: 20
+
+# ---- Iteration 2: gated write (HITL) ----------------------------------------
+# Master switch for the write scope. When false (default) the steward is exactly
+# its read-only self: no propose_quarantine tool and the read-only persona. When
+# true, the deployment gets WRITE_ENABLED + the gated-write persona and the
+# propose_quarantine tool. NOTE: unlike every other iter-2 steward, the write
+# target is GitHub (a PR label), NOT the cluster — so this chart creates NO
+# writer RBAC Role at all. The gate + human approval are always required (ADR-0011).
+writeEnabled: false
+# HITL approval channel (ADR-0011, pluggable on the same gate + executor + audit):
+#   "chat"      -> synchronous Approve/Reject in the chat UI (DEFAULT for security
+#                  so a quarantine is testable live; a PR-to-approve-a-PR-quarantine
+#                  is recursive/confusing).
+#   "github_pr" -> the steward opens a PR per proposal; MERGE = approve, CLOSE =
+#                  reject. Requires github.* set.
+writeApprovalChannel: chat
+
+# The domain guard for the gated quarantine. Only allow-listed labels may ever be
+# applied to a PR; the first entry is the default. Enforced in-app BEFORE the gate
+# stores a proposal (a violating request is denied, never approvable).
+quarantine:
+  allowedLabels: "quarantined,security-hold"
+
+keyVault:
+  name: ""                # ${KV_NAME}, filled at helm install time
+  tenantId: ""
+
+env:
+  azureOpenAiEndpoint: ""
+  azureOpenAiChatDeploymentName: "gpt-4.1"
+  langfuseHost: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi

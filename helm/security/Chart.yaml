@@ -1,0 +1,6 @@
+apiVersion: v2
+name: meshops-security
+description: MeshOps Security Steward — ships the hello-security SecOps steward (classifies the HITL proposal queue — open PRs + diffs — against an injection/confused-deputy/poisoning rubric; Iteration 2 gated PR quarantine via a GitHub label).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

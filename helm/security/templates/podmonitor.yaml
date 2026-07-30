@@ -1,0 +1,13 @@
+apiVersion: azmonitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics

@@ -26,11 +26,11 @@ MeshOps grows along **two independent axes**, and it's important not to conflate
 | **Quality** | ✅ [`quality/`](quality/) | ⬜ (propose a prompt-version PR) | ⬜ |
 | **SRE** | ✅ [`sre/`](sre/) — AIOps correlation (Prometheus × AKS × Langfuse) | ✅ [gated-write](../iteration-02-gated-write/sre/) — Deployment scale | ⬜ |
 | **Gateway** | ✅ [`gateway/`](gateway/) — routing/cost governance (LiteLLM routes × budget caps × health) | ✅ [gated-write](../iteration-02-gated-write/gateway/) — route budget cap | ⬜ |
-| **Security** | ⬜ | ⬜ | ⬜ |
+| **Security** | ✅ [`security/`](security/) — input-trust vetting (GitHub open PRs × proposal diffs) | ✅ [gated-write](../iteration-02-gated-write/security/) — PR quarantine | ⬜ |
 
-**Iteration 1 is complete for FIVE stewards.** Inference, Pipeline, Quality, SRE, and Gateway now cover serving, registry, trace quality, cross-substrate AIOps correlation, and routing/cost governance. The next moves are depth moves in `../iteration-02-gated-write/`, plus later breadth moves for Security.
+**Iteration 1 is complete for SIX stewards.** Inference, Pipeline, Quality, SRE, Gateway, and Security now cover serving, registry, trace quality, cross-substrate AIOps correlation, routing/cost governance, and input-trust vetting. All six stewards are also live at Iteration 2 in `../iteration-02-gated-write/`.
 
-## The five read-only builds
+## The six read-only builds
 
 Each subfolder is one steward's Iteration-1 deliverable bundle (same five-doc shape):
 
@@ -41,6 +41,7 @@ Each subfolder is one steward's Iteration-1 deliverable bundle (same five-doc sh
 | [**Quality**](quality/) | Langfuse project (traces + eval scores) | *Is the model's output any good, and is it drifting?* |
 | [**SRE**](sre/) | Azure Managed Prometheus + AKS state + Langfuse | *Do metrics, cluster state, and LLM traces correlate into an incident?* |
 | [**Gateway**](gateway/) | LiteLLM proxy (routes + budget caps + health) | *Which route serves, at what budget cap, and is the upstream healthy?* |
+| [**Security**](security/) | GitHub open PR queue (HITL proposals + diffs) | *Is this input safe for the mesh to trust?* |
 
 ## The load-bearing invariant of Iteration 1
 

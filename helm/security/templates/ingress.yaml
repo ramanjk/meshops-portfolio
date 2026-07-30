@@ -1,0 +1,40 @@
+{{- if and .Values.chat.enabled ((.Values.chat.ingress).enabled) }}
+{{- $ing := .Values.chat.ingress }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.serviceAccount.name }}-chat
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
+    app.kubernetes.io/component: steward-chat
+  {{- with $ing.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if and $ing.tls.enabled $ing.host }}
+  tls:
+    - hosts:
+        - {{ $ing.host | quote }}
+      {{- with $ing.tls.secretName }}
+      secretName: {{ . }}
+      {{- end }}
+  {{- end }}
+  rules:
+    - {{- with $ing.host }}
+      host: {{ . | quote }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.serviceAccount.name }}-chat
+                port:
+                  number: {{ .Values.chat.port }}
+{{- end }}

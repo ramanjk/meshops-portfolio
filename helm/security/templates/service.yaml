@@ -1,0 +1,33 @@
+{{- if .Values.chat.enabled }}
+{{- $svc := .Values.chat.service | default dict }}
+{{- $type := $svc.type | default "ClusterIP" }}
+# Service fronting the steward's interactive chat API.
+#   type=LoadBalancer -> open http://<EXTERNAL-IP>:{{ .Values.chat.port }}/ once assigned:
+#     kubectl get svc -n {{ .Values.namespace }} {{ .Values.serviceAccount.name }}-chat -w
+#   type=ClusterIP    -> port-forward:
+#     kubectl port-forward -n {{ .Values.namespace }} svc/{{ .Values.serviceAccount.name }}-chat {{ .Values.chat.port }}:{{ .Values.chat.port }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.serviceAccount.name }}-chat
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
+    app.kubernetes.io/component: steward-chat
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $type }}
+  {{- if and (eq $type "LoadBalancer") $svc.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $svc.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  selector:
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name }}
+  ports:
+    - name: http
+      port: {{ .Values.chat.port }}
+      targetPort: http
+{{- end }}
