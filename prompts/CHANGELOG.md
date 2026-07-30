@@ -1,5 +1,27 @@
 # Prompt CHANGELOG
 
+## 1.6.0
+- Added the **SRE Steward** (`hello-sre`) persona trio —
+  `sre-steward.system.md`, `sre-steward.chat.md`, and
+  `sre-steward.gated-write.chat.md`. This is the fourth steward and the first
+  **AIOps / correlation** steward: unlike its peers (each scoped to one
+  substrate), it joins **three read substrates** — Azure Managed Prometheus
+  (metrics), the AKS cluster itself (workloads/events/nodes via read-only
+  `aks-mcp`), and the Langfuse project (LLM traces + eval scores) — into a
+  single incident timeline + root-cause hypothesis + advice-only remediation.
+  - Iteration 1 (read-only): observe → correlate → report. Same three no-write
+    guarantees and non-negotiable identity anchoring as the other stewards;
+    `requires_hitl` forced false; `proposed_remediation` explicitly scoped as
+    *advice*, not an action.
+  - Iteration 2 (gated write + HITL): `propose_scale` — change a Kubernetes
+    **Deployment's replica count** (the scaler-tuning remediation), bounded to
+    an allow-listed namespace/deployment set and replica range, actuated by
+    deterministic `kubectl scale` under a namespaced writer Role — never the
+    LLM. Reuses the shared `src/stewards/hitl/` propose→approve→apply→audit
+    spine and pluggable chat/github_pr channels (ADR-0011: *no autonomous
+    actuation*). Loaded only when `write_enabled=true`; otherwise the read-only
+    `sre-steward.chat.md` persona is used unchanged.
+
 ## 1.5.0
 - Added `pipeline-steward.gated-write.chat.md` and
   `quality-steward.gated-write.chat.md` — the **Iteration 2 (gated write +
