@@ -25,12 +25,12 @@ MeshOps grows along **two independent axes**, and it's important not to conflate
 | **Pipeline** | ✅ [`pipeline/`](pipeline/) | ⬜ (natural first writer: propose a registry promotion) | ⬜ |
 | **Quality** | ✅ [`quality/`](quality/) | ⬜ (propose a prompt-version PR) | ⬜ |
 | **SRE** | ✅ [`sre/`](sre/) — AIOps correlation (Prometheus × AKS × Langfuse) | ✅ [gated-write](../iteration-02-gated-write/sre/) — Deployment scale | ⬜ |
-| **Gateway** | ⬜ | ⬜ | ⬜ |
+| **Gateway** | ✅ [`gateway/`](gateway/) — routing/cost governance (LiteLLM routes × budget caps × health) | ✅ [gated-write](../iteration-02-gated-write/gateway/) — route budget cap | ⬜ |
 | **Security** | ⬜ | ⬜ | ⬜ |
 
-**Iteration 1 is complete for four stewards.** Inference, Pipeline, Quality, and SRE now cover serving, registry, trace quality, and cross-substrate AIOps correlation. The next moves are depth moves in `../iteration-02-gated-write/`, plus later breadth moves for Gateway and Security.
+**Iteration 1 is complete for FIVE stewards.** Inference, Pipeline, Quality, SRE, and Gateway now cover serving, registry, trace quality, cross-substrate AIOps correlation, and routing/cost governance. The next moves are depth moves in `../iteration-02-gated-write/`, plus later breadth moves for Security.
 
-## The four read-only builds
+## The five read-only builds
 
 Each subfolder is one steward's Iteration-1 deliverable bundle (same five-doc shape):
 
@@ -40,6 +40,7 @@ Each subfolder is one steward's Iteration-1 deliverable bundle (same five-doc sh
 | [**Pipeline**](pipeline/) | MLflow Model Registry (versions, stages) | *Which version should be deployed, and is the next candidate ready?* |
 | [**Quality**](quality/) | Langfuse project (traces + eval scores) | *Is the model's output any good, and is it drifting?* |
 | [**SRE**](sre/) | Azure Managed Prometheus + AKS state + Langfuse | *Do metrics, cluster state, and LLM traces correlate into an incident?* |
+| [**Gateway**](gateway/) | LiteLLM proxy (routes + budget caps + health) | *Which route serves, at what budget cap, and is the upstream healthy?* |
 
 ## The load-bearing invariant of Iteration 1
 
