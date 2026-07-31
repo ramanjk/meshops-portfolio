@@ -143,6 +143,64 @@ def _friendly_error(exc: Exception) -> str | None:
     return None
 
 
+def _repair_session(session: Any) -> None:
+    """Prune dangling tool-call parts left by an interrupted turn.
+
+    If ``agent.run`` is interrupted mid tool-loop (e.g. a transient 429 from the
+    model backend after a function call was issued but before its result was
+    recorded), the session history keeps a ``function_call`` content part with no
+    matching ``function_result`` (or vice-versa). Replaying that history on the
+    next turn makes the OpenAI Responses API reject the request with
+    ``400 - No tool output found for function call``. We drop any unmatched
+    function-call / function-result parts so the next turn replays valid history.
+    """
+    state = getattr(session, "state", None)
+    if not isinstance(state, dict):
+        return
+    messages = state.get("messages")
+    if not messages:
+        return
+    call_ids: set[str] = set()
+    result_ids: set[str] = set()
+    for msg in messages:
+        for part in getattr(msg, "contents", None) or []:
+            cid = getattr(part, "call_id", None)
+            if cid is None:
+                continue
+            ptype = getattr(part, "type", None)
+            if ptype == "function_call":
+                call_ids.add(cid)
+            elif ptype == "function_result":
+                result_ids.add(cid)
+    unmatched = call_ids ^ result_ids
+    if not unmatched:
+        return
+    repaired: list[Any] = []
+    for msg in messages:
+        contents = getattr(msg, "contents", None)
+        if contents is None:
+            repaired.append(msg)
+            continue
+        kept = [
+            part
+            for part in contents
+            if not (
+                getattr(part, "type", None) in ("function_call", "function_result")
+                and getattr(part, "call_id", None) in unmatched
+            )
+        ]
+        if not kept:
+            continue
+        msg.contents = kept
+        repaired.append(msg)
+    state["messages"] = repaired
+    LOG.warning(
+        "[chat] repaired session %s: dropped %d unmatched tool-call part(s)",
+        getattr(session, "session_id", "?"),
+        len(unmatched),
+    )
+
+
 def _build_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Pipeline Steward Chat")
     state: dict[str, Any] = {}
@@ -240,6 +298,7 @@ def _build_app(settings: Settings) -> FastAPI:
             except Exception as exc:
                 LOG.exception("[chat] turn failed")
                 span.record_exception(exc)
+                _repair_session(session)
                 reply = _friendly_error(exc) or f"Sorry — I hit an error handling that: {exc}"
             finally:
                 current_session_id.reset(token)
