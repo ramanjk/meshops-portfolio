@@ -56,4 +56,3 @@ Every steward in this phase is **read-only, enforced three independent ways** (d
 ## Cross-cutting assets (one level up, in `040_iterations/`)
 
 - [`PROMPTING_STRATEGY.md`](../PROMPTING_STRATEGY.md) — how this was driven prompt-by-prompt (now describes the maturity ladder).
-- [`LINKEDIN_POSTS.md`](../LINKEDIN_POSTS.md) + [`assets/`](../assets/) — portfolio promotion (architecture diagram, posts).

@@ -16,3 +16,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .env
+
+# Portfolio promotion — keep local only, not in public repo
+040_iterations/LINKEDIN_POSTS.md
+040_iterations/assets/
